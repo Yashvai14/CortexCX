@@ -45,3 +45,15 @@ class Workspace(BaseModel):
         back_populates="workspace",
         cascade="all, delete-orphan",
     )
+
+    customers = relationship(
+        "Customer",
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+    )
+
+    conversations = relationship(
+        "Conversation",
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+    )

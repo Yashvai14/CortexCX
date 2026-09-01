@@ -1,6 +1,4 @@
-from google.auth import default
-from numpy.core.defchararray import index
-from enum import unique
+from uuid import UUID
 from datetime import datetime
 from enum import Enum
 from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, ForeignKey, String
@@ -18,7 +16,7 @@ class UserRole(str, Enum):
 class User(BaseModel):
     __tablename__ = "users"
 
-    workspace_id: Mapped[str] = mapped_column(
+    workspace_id: Mapped[UUID] = mapped_column(
         ForeignKey("workspaces.id"),
         nullable=False,
     )
@@ -76,7 +74,7 @@ class User(BaseModel):
 class RefreshToken(BaseModel):
     __tablename__ = "refresh_tokens"
 
-    user_id: Mapped[str] = mapped_column(
+    user_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )

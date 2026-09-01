@@ -10,11 +10,16 @@ class Setting(BaseSettings):
     PORT: int
     
     DATABASE_URL: str
-    SECRET_KEY: str
-    ALGORITHM: str
+    SECRET_KEY: str = "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
+    ALGORITHM: str = "HS256"
 
-    ACCESS_TOKEN_EXPIRE_MINUTES: int
-    REFRESH_TOKEN_EXPIRE_DAYS: int
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 10080
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+
+    AI_PROVIDER: str = "mock"
+    OPENAI_API_KEY: str | None = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
 
     model_config = SettingsConfigDict(
         env_file=".env",

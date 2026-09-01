@@ -20,3 +20,16 @@ class WorkspaceRepository(BaseRepository[Workspace]):
             .filter(Workspace.slug == slug)
             .first()
         )
+
+    def update(
+        self,
+        db: Session,
+        workspace: Workspace,
+        data: dict,
+    ) -> Workspace:
+
+        for key, value in data.items():
+            if value is not None and hasattr(workspace, key):
+                setattr(workspace, key, value)
+
+        return workspace

@@ -7,7 +7,11 @@ from app.core.config import settings
 from app.database.base import Base
 
 # Import all models here so Alembic can find them
-from app.auth.model import User
+import app.database.models
+from app.auth.model import RefreshToken, User
+from app.conversation.message_model import Message
+from app.conversation.model import Conversation
+from app.customer.model import Customer
 from app.workspace.model import Workspace
 
 config = context.config
