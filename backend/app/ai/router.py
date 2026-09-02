@@ -18,6 +18,8 @@ from app.auth.dependencies import get_current_user
 from app.auth.model import User, UserRole
 from app.auth.permissions import require_roles
 from app.database.session import get_db
+from app.rag.schema import RAGProcessRequest, RAGProcessResponse
+from app.rag.service import RAGService
 
 router = APIRouter(
     prefix="/ai",
@@ -118,3 +120,41 @@ def get_conversation_ai_status(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+@router.post(
+    "/conversations/{conversation_id}/rag",
+    response_model=RAGProcessResponse,
+    status_code=status.HTTP_200_OK,
+)
+def process_conversation_rag(
+    conversation_id: UUID,
+    data: RAGProcessRequest | None = None,
+    current_user: User = Depends(
+        require_roles(UserRole.OWNER, UserRole.ADMIN, UserRole.AGENT)
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return RAGService.execute(
+            db=db,
+            current_user=current_user,
+            conversation_id=conversation_id,
+            data=data,
+        )
+    except LookupError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(e),
+        )
+

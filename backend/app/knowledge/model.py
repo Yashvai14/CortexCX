@@ -2,7 +2,9 @@ from enum import Enum
 from uuid import UUID
 
 from sqlalchemy import (
+    ARRAY,
     Enum as SQLEnum,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -172,6 +174,11 @@ class DocumentChunk(BaseModel):
     content: Mapped[str] = mapped_column(
         Text,
         nullable=False,
+    )
+
+    embedding: Mapped[list[float] | None] = mapped_column(
+        ARRAY(Float),
+        nullable=True,
     )
 
     metadata_json: Mapped[dict | None] = mapped_column(

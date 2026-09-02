@@ -11,6 +11,7 @@ from app.knowledge.commands.create_document import CreateDocumentCommand
 from app.knowledge.commands.create_knowledge_source import (
     CreateKnowledgeSourceCommand,
 )
+from app.knowledge.commands.embed_document import EmbedDocumentCommand
 from app.knowledge.commands.get_document import GetDocumentCommand
 from app.knowledge.commands.get_knowledge_source import GetKnowledgeSourceCommand
 from app.knowledge.commands.list_document_chunks import (
@@ -20,10 +21,13 @@ from app.knowledge.commands.list_documents import ListDocumentsCommand
 from app.knowledge.commands.list_knowledge_sources import (
     ListKnowledgeSourcesCommand,
 )
+from app.knowledge.commands.search_knowledge import SearchKnowledgeCommand
 from app.knowledge.schema import (
     DocumentChunkResponse,
     DocumentCreateRequest,
     DocumentResponse,
+    KnowledgeSearchRequest,
+    KnowledgeSearchResponse,
     KnowledgeSourceCreateRequest,
     KnowledgeSourceResponse,
 )
@@ -201,5 +205,78 @@ def list_document_chunks(
     except LookupError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+
+# =====================================================================
+# Embedding & Semantic Search Endpoints (Milestone 12)
+# =====================================================================
+
+
+@router.post(
+    "/documents/{document_id}/embed",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_200_OK,
+)
+def embed_document(
+    document_id: UUID,
+    current_user: User = Depends(
+        require_roles(UserRole.OWNER, UserRole.ADMIN)
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return EmbedDocumentCommand.execute(
+            db=db,
+            current_user=current_user,
+            document_id=document_id,
+        )
+    except LookupError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(e),
+        )
+
+
+@router.post(
+    "/search",
+    response_model=KnowledgeSearchResponse,
+    status_code=status.HTTP_200_OK,
+)
+def search_knowledge(
+    data: KnowledgeSearchRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return SearchKnowledgeCommand.execute(
+            db=db,
+            current_user=current_user,
+            data=data,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(e),
         )

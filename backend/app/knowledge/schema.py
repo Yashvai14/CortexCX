@@ -61,6 +61,33 @@ class DocumentChunkResponse(BaseModel):
     document_id: UUID
     chunk_index: int
     content: str
+    has_embedding: bool = False
     metadata_json: dict | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str = Field(min_length=1)
+    top_k: int = Field(5, ge=1, le=50)
+    knowledge_source_id: UUID | None = None
+
+
+class KnowledgeSearchResult(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    chunk_id: UUID
+    document_id: UUID
+    knowledge_source_id: UUID | None = None
+    content: str
+    chunk_index: int
+    similarity_score: float
+    metadata_json: dict | None = None
+
+
+class KnowledgeSearchResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    query: str
+    results: list[KnowledgeSearchResult]
+    total: int

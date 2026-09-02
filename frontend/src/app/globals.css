@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+/* Inter is loaded via next/font — no @import needed */
+
+:root {
+  --color-sidebar: #0f172a;   /* slate-900 */
+  --color-surface: #f8fafc;   /* slate-50 */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

@@ -1,6 +1,9 @@
 from typing import Any
 
-from openai import OpenAI
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
 
 from app.ai.providers.base import BaseLLMProvider
 from app.core.config import settings
@@ -13,8 +16,14 @@ class OpenAIProvider(BaseLLMProvider):
         self,
         api_key: str | None = None,
         model_name: str | None = None,
-        client: OpenAI | None = None,
+        client: Any | None = None,
     ):
+        if OpenAI is None and client is None:
+            raise ImportError(
+                "The 'openai' package is required to use OpenAIProvider. "
+                "Install it with `pip install openai`."
+            )
+
         self.api_key = api_key or settings.OPENAI_API_KEY
         self.model_name = model_name or settings.OPENAI_MODEL or "gpt-4o-mini"
 
