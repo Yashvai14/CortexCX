@@ -62,9 +62,12 @@ export function Button({
 
 // ── Badge ─────────────────────────────────────────────────────────
 type BadgeColor = 'green' | 'red' | 'yellow' | 'blue' | 'slate' | 'indigo' | 'purple';
+type BadgeVariant = 'success' | 'danger' | 'warning' | 'info' | 'default' | BadgeColor;
 
 interface BadgeProps {
   color?: BadgeColor;
+  variant?: BadgeVariant;
+  className?: string;
   children: React.ReactNode;
 }
 
@@ -78,10 +81,22 @@ const badgeColors: Record<BadgeColor, string> = {
   purple: 'bg-purple-50 text-purple-700 ring-purple-200',
 };
 
-export function Badge({ color = 'slate', children }: BadgeProps) {
+const variantToColor: Record<string, BadgeColor> = {
+  success: 'green',
+  danger: 'red',
+  warning: 'yellow',
+  info: 'blue',
+  default: 'slate',
+};
+
+export function Badge({ color, variant, className = '', children }: BadgeProps) {
+  const resolvedColor: BadgeColor =
+    color ?? (variant && variantToColor[variant] ? variantToColor[variant] : (variant as BadgeColor) ?? 'slate');
+  const colorClass = badgeColors[resolvedColor] || badgeColors.slate;
+
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${badgeColors[color]}`}
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${colorClass} ${className}`}
     >
       {children}
     </span>

@@ -91,3 +91,10 @@ class KnowledgeSearchResponse(BaseModel):
     query: str
     results: list[KnowledgeSearchResult]
     total: int
+
+
+class URLIngestRequest(BaseModel):
+    knowledge_source_id: UUID
+    url: str = Field(min_length=5, max_length=2000)
+    title: str | None = Field(None, max_length=255)
+

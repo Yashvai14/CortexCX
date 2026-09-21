@@ -1,19 +1,23 @@
+from typing import Any
 from uuid import UUID
-
 from sqlalchemy.orm import Session
 
-from app.embeddings.factory import get_embedding_provider
 from app.knowledge.model import DocumentChunk
-from app.knowledge.repositories.document_chunk_repository import (
-    DocumentChunkRepository,
-)
+from app.rag.bm25_retriever import BM25Retriever
+from app.rag.compressor import ContextCompressor
+from app.rag.hybrid_retriever import HybridRetriever
+from app.rag.reranker import Reranker
 
 
 class RAGRetriever:
-    """Retrieves relevant knowledge chunks for a query within a workspace boundary."""
+    """Full-featured Hybrid RAG Retrieval Engine with BM25 + Dense Fusion, Reranking, and Compression."""
 
-    def __init__(self):
-        self.chunk_repo = DocumentChunkRepository()
+    def __init__(self, top_candidates: int = 15):
+        self.hybrid_retriever = HybridRetriever()
+        self.bm25_retriever = BM25Retriever()
+        self.reranker = Reranker()
+        self.compressor = ContextCompressor()
+        self.top_candidates = top_candidates
 
     def retrieve(
         self,
@@ -21,21 +25,47 @@ class RAGRetriever:
         workspace_id: UUID,
         query: str,
         top_k: int = 5,
+        knowledge_source_id: UUID | None = None,
+        metadata_filter: dict[str, Any] | None = None,
     ) -> list[tuple[DocumentChunk, float]]:
         if not query or not query.strip():
             return []
 
-        provider = get_embedding_provider()
-        try:
-            query_vector = provider.embed_text(query.strip())
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to generate query embedding: {str(e)}"
-            ) from None
+        cleaned_query = query.strip()
 
-        return self.chunk_repo.search_similar_chunks(
-            db=db,
-            workspace_id=workspace_id,
-            query_vector=query_vector,
-            top_k=top_k,
+        # 1. Hybrid Retrieval (Dense Vector + BM25 Sparse Keyword)
+        candidates: list[tuple[DocumentChunk, float]] = []
+        try:
+            candidates = self.hybrid_retriever.retrieve(
+                db=db,
+                workspace_id=workspace_id,
+                query=cleaned_query,
+                top_k=max(top_k * 2, self.top_candidates),
+                knowledge_source_id=knowledge_source_id,
+                metadata_filter=metadata_filter,
+            )
+        except Exception:
+            # Resilient fallback to pure BM25 keyword search if vector embeddings fail
+            candidates = self.bm25_retriever.retrieve(
+                db=db,
+                workspace_id=workspace_id,
+                query=cleaned_query,
+                top_k=top_k * 2,
+                knowledge_source_id=knowledge_source_id,
+                metadata_filter=metadata_filter,
+            )
+
+        if not candidates:
+            return []
+
+        # 2. Cross-Encoder / Semantic Reranking
+        reranked = self.reranker.rerank(
+            query=cleaned_query,
+            candidates=candidates,
+            top_n=top_k,
         )
+
+        # 3. Context Compression & Deduplication
+        compressed = self.compressor.compress(reranked)
+
+        return compressed
