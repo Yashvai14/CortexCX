@@ -153,9 +153,9 @@ export interface RAGProcessResponse {
 // Knowledge Base
 // =====================================================================
 
-export type KnowledgeSourceType = 'txt' | 'markdown' | 'pdf' | 'docx' | 'url';
+export type KnowledgeSourceType = 'txt' | 'pdf' | 'docx' | 'website';
 export type KnowledgeSourceStatus = 'active' | 'inactive';
-export type DocumentStatus = 'pending' | 'chunked' | 'embedded' | 'failed';
+export type DocumentStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface KnowledgeSource {
   id: string;
@@ -177,6 +177,7 @@ export interface KnowledgeDocument {
   content: string;
   metadata_json: Record<string, unknown> | null;
   status: DocumentStatus;
+  error_message: string | null;
   chunk_count: number;
   created_at: string;
   updated_at: string;
@@ -189,6 +190,7 @@ export interface DocumentChunk {
   chunk_index: number;
   content: string;
   has_embedding: boolean;
+  embedding_model: string | null;
   metadata_json: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
@@ -202,6 +204,12 @@ export interface KnowledgeSearchResult {
   chunk_index: number;
   similarity_score: number;
   metadata_json: Record<string, unknown> | null;
+  document_title: string | null;
+  section: string | null;
+  page: number | null;
+  dense_score: number | null;
+  keyword_score: number | null;
+  coverage: number | null;
 }
 
 export interface KnowledgeSearchResponse {

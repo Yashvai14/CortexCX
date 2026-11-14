@@ -15,6 +15,7 @@ import {
   type EscalationDetail,
 } from '@/api/escalations';
 import { AxiosError } from 'axios';
+import { LinkedTickets } from '@/components/tickets/LinkedTickets';
 
 export default function EscalationDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -175,7 +176,7 @@ export default function EscalationDetailPage() {
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
                 placeholder="Type your response to the customer..."
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-surface"
               />
               <div className="mt-3 flex items-center justify-between">
                 <p className="text-xs text-slate-400">
@@ -195,6 +196,14 @@ export default function EscalationDetailPage() {
 
           {/* Right Sidebar: Agent Assist Intelligence */}
           <div className="space-y-6">
+            <LinkedTickets
+              conversationId={detail.conversation_id}
+              customerId={detail.customer.id}
+              defaultSubject={`Escalation: ${detail.conversation_subject}`}
+              defaultDescription={[detail.reason && `Reason: ${detail.reason}`, detail.summary && `Summary: ${detail.summary}`].filter(Boolean).join('\n\n')}
+              defaultPriority="high"
+              defaultCategory="Escalation"
+            />
             {/* Reason & Status */}
             <Card className="p-5">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Handoff Diagnostics</h3>
@@ -228,7 +237,7 @@ export default function EscalationDetailPage() {
                     Insert Text
                   </button>
                 </div>
-                <p className="text-xs text-slate-700 italic bg-white p-3 rounded border border-amber-200/60 leading-relaxed">
+                <p className="text-xs text-slate-700 italic bg-surface p-3 rounded border border-amber-200/60 leading-relaxed">
                   "{detail.suggested_reply}"
                 </p>
               </Card>

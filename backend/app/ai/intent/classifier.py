@@ -4,6 +4,8 @@ from typing import Any
 
 from app.ai.intent.schema import IntentEnum, IntentResult
 from app.ai.providers.factory import get_llm_provider
+from app.core.config import settings
+from app.ai.text_utils import extract_order_number
 
 
 class IntentClassifier:
@@ -63,6 +65,14 @@ Respond ONLY with valid JSON in this format:
         if "Mock" in provider_name:
             return heuristic_result
 
+        if not settings.AI_LLM_INTENT_CLASSIFICATION:
+            return heuristic_result
+
+        # A clear-cut heuristic match (specific keywords / order number / code) needs no second LLM call:
+        # skipping it roughly halves reply latency on a local model. Vague messages still go to the LLM.
+        if heuristic_result.confidence >= 0.85 and heuristic_result.intent not in (IntentEnum.OTHER, IntentEnum.GENERAL_FAQ):
+            return heuristic_result
+
         # For OpenAI or Ollama, query structured completion
         try:
             prompt = f"Customer Message: \"{clean_text}\""
@@ -94,6 +104,10 @@ Respond ONLY with valid JSON in this format:
             parsed = json.loads(cleaned)
             intent_str = parsed.get("intent", "").upper()
             if intent_str in IntentEnum.__members__:
+                # A small model readily over-reads a plain question as a complaint or a request for a human, which
+                # triggers an unwarranted handoff. These two intents need keyword evidence as well.
+                if intent_str in ("COMPLAINT", "HUMAN_AGENT") and heuristic_result.intent.value.upper() != intent_str:
+                    return heuristic_result
                 return IntentResult(
                     intent=IntentEnum[intent_str],
                     confidence=float(parsed.get("confidence", 0.8)),
@@ -112,7 +126,7 @@ Respond ONLY with valid JSON in this format:
         entities: dict[str, Any] = {}
 
         # 1. Human agent request
-        if any(w in lower for w in ["human", "agent", "real person", "representative", "operator", "live person", "talk to someone", "support person"]):
+        if re.search(r"\b(human|agent|real person|representative|operator|live person|talk to (?:someone|somebody)|speak to (?:someone|somebody)|support person|supervisor|manager)\b", lower):
             return IntentResult(
                 intent=IntentEnum.HUMAN_AGENT,
                 confidence=0.98,
@@ -121,12 +135,12 @@ Respond ONLY with valid JSON in this format:
             )
 
         # Extract order number pattern
-        order_match = re.search(r"(?:order\s*(?:number|id|#)?\s*|#)([a-zA-Z0-9_-]{4,20})", text, re.IGNORECASE)
-        if order_match:
-            entities["order_number"] = order_match.group(1).replace("#", "").strip()
+        order_number = extract_order_number(text)
+        if order_number:
+            entities["order_number"] = order_number
 
         # 2. Order cancellation
-        if any(w in lower for w in ["cancel my order", "cancel order", "cancellation"]) and "order" in lower:
+        if any(w in lower for w in ["cancel my order", "cancel order", "cancellation", "cancel it", "cancel the order"]):
             return IntentResult(
                 intent=IntentEnum.ORDER_CANCELLATION,
                 confidence=0.94,
@@ -135,7 +149,7 @@ Respond ONLY with valid JSON in this format:
             )
 
         # 3. Order status / tracking
-        if any(w in lower for w in ["track", "status", "where is my", "shipped", "tracking", "eta", "delivered", "package"]) and ("order" in lower or "package" in lower or entities.get("order_number")):
+        if re.search(r"\b(track|tracking|status|where is my|where's my|shipped|eta|delivered|delivery status|package|parcel|arrive|arrived)\b", lower) and ("order" in lower or "package" in lower or "parcel" in lower or entities.get("order_number")):
             return IntentResult(
                 intent=IntentEnum.ORDER_STATUS,
                 confidence=0.95,
@@ -162,9 +176,15 @@ Respond ONLY with valid JSON in this format:
             )
 
         # 5. Coupon / Discount
-        coupon_match = re.search(r"code\s+([A-Z0-9_-]{3,15})", text)
+        coupon_match = re.search(r"\bcode\s+([A-Za-z]{2,}[A-Za-z0-9_-]*\d[A-Za-z0-9_-]*|[A-Z0-9_-]{4,15})\b", text)
         if coupon_match:
-            entities["code"] = coupon_match.group(1)
+            entities["code"] = coupon_match.group(1).upper()
+            return IntentResult(
+                intent=IntentEnum.COUPON,
+                confidence=0.94,
+                entities=entities,
+                reasoning="Customer provided a promotional code to check.",
+            )
         if any(w in lower for w in ["coupon", "promo code", "discount code", "voucher"]):
             return IntentResult(
                 intent=IntentEnum.COUPON,
@@ -222,12 +242,31 @@ Respond ONLY with valid JSON in this format:
             )
 
         # 10. Product search / Information
-        if any(w in lower for w in ["looking for", "find", "search", "buy", "product", "recommend", "price of", "cost of", "do you have", "show me"]):
+        if any(w in lower for w in ["looking for", "find", "search", "buy", "product", "recommend", "price", "how much", "cost of", "do you have", "show me"]):
             return IntentResult(
                 intent=IntentEnum.PRODUCT_SEARCH,
                 confidence=0.85,
                 entities=entities,
                 reasoning="Customer is looking for products or pricing.",
+            )
+
+        # 10b. Greetings / thanks (no knowledge needed, never an escalation)
+        if re.fullmatch(r"\s*(hi|hii+|hello|hey|hey there|good (morning|afternoon|evening)|thanks|thank you( so much)?|thx|ok(ay)?|great,? thanks|cheers)[\s!.,]*", lower):
+            entities["smalltalk"] = True
+            return IntentResult(
+                intent=IntentEnum.OTHER,
+                confidence=0.95,
+                entities=entities,
+                reasoning="Greeting or thanks.",
+            )
+
+        # 10c. A concrete order reference with any problem wording is an order enquiry
+        if entities.get("order_number"):
+            return IntentResult(
+                intent=IntentEnum.ORDER_STATUS,
+                confidence=0.86,
+                entities=entities,
+                reasoning="Message references a specific order number.",
             )
 
         # 11. General FAQ / Other

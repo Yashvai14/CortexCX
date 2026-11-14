@@ -26,4 +26,5 @@ class ChannelResponse(BaseModel):
     decision: str
     confidence_score: float
     sources: list[dict[str, Any]] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
     escalated: bool = False

@@ -73,3 +73,42 @@ export async function searchKnowledge(data: {
   const resp = await apiClient.post<KnowledgeSearchResponse>('/knowledge/search', data);
   return resp.data;
 }
+
+// ── Upload / URL / maintenance ────────────────────────────────────
+export async function uploadDocument(
+  file: File,
+  knowledgeSourceId: string,
+  title?: string,
+): Promise<KnowledgeDocument> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('knowledge_source_id', knowledgeSourceId);
+  if (title) form.append('title', title);
+  const resp = await apiClient.post<KnowledgeDocument>('/knowledge/upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+  });
+  return resp.data;
+}
+
+export async function ingestUrl(
+  knowledgeSourceId: string,
+  url: string,
+  title?: string,
+): Promise<KnowledgeDocument> {
+  const resp = await apiClient.post<KnowledgeDocument>('/knowledge/url', {
+    knowledge_source_id: knowledgeSourceId,
+    url,
+    title: title || undefined,
+  });
+  return resp.data;
+}
+
+export async function deleteDocument(documentId: string): Promise<void> {
+  await apiClient.delete(`/knowledge/documents/${documentId}`);
+}
+
+export async function reindexKnowledge(): Promise<{ message: string; documents: number }> {
+  const resp = await apiClient.post<{ message: string; documents: number }>('/knowledge/reindex');
+  return resp.data;
+}

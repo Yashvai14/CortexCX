@@ -4,7 +4,11 @@ from app.ai.providers.base import BaseLLMProvider
 
 
 class MockLLMProvider(BaseLLMProvider):
-    """Deterministic mock provider for AI support responses."""
+    """Offline provider that answers from real grounded facts (no LLM needed).
+
+    When the orchestrator supplies structured ``grounding`` (intent, tool results, retrieved
+    knowledge, memories) the reply is composed from those facts. It never echoes the prompt.
+    """
 
     def __init__(self, model_name: str = "mock-support-agent-v1"):
         self.model_name = model_name
@@ -16,14 +20,19 @@ class MockLLMProvider(BaseLLMProvider):
         prompt_override: str | None = None,
         **kwargs: Any,
     ) -> str:
-        if prompt_override:
-            return f"[AI Assistant Override] {prompt_override}"
+        from app.ai.composer import Grounding, compose_reply  # lazy: composer imports the intent package
 
-        last_message = (
-            messages[-1]["content"] if messages else "General inquiry"
-        )
+        grounding = kwargs.get("grounding")
+        if isinstance(grounding, Grounding):
+            return compose_reply(grounding)
+
+        # An operator-supplied override on an ungrounded call is the message the operator wants sent.
+        if prompt_override and prompt_override.strip():
+            return prompt_override.strip()
+
+        # Ungrounded call: there is no customer question to answer (the orchestrator always supplies
+        # grounding when there is one), so open the conversation around its subject.
         return (
-            f"Hello! This is your AI Support Assistant regarding '{conversation_subject}'. "
-            f"I have reviewed your message: \"{last_message}\". "
-            f"Our team is actively assisting you, and I am here to help resolve your inquiry."
+            f'Hi! I see you are reaching out about "{conversation_subject}". '
+            "What would you like help with?"
         )

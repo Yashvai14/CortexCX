@@ -1,288 +1,546 @@
 'use client';
 
-import { useEffect, useState, FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, FormEvent, DragEvent } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileText,
+  Globe,
+  Layers,
+  Link2,
+  Loader2,
+  RefreshCw,
+  Search,
+  Trash2,
+  UploadCloud,
+  X,
+} from 'lucide-react';
+import { AxiosError } from 'axios';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
-import {
-  Button, Card, SkeletonCard, EmptyState, ErrorBanner, DocumentStatusBadge, Badge,
-} from '@/components/ui';
-import {
-  listKnowledgeSources, listDocuments, embedDocument,
-  searchKnowledge, createKnowledgeSource, createDocument,
-} from '@/api/knowledge';
-import type { KnowledgeSource, KnowledgeDocument, KnowledgeSearchResult } from '@/types';
-import { AxiosError } from 'axios';
+import { Button, Card, EmptyState, ErrorBanner, SkeletonCard } from '@/components/ui';
+import { CountUp } from '@/components/motion';
 import { useAuth } from '@/context/AuthContext';
+import {
+  createDocument,
+  createKnowledgeSource,
+  deleteDocument,
+  embedDocument,
+  ingestUrl,
+  listDocumentChunks,
+  listDocuments,
+  listKnowledgeSources,
+  reindexKnowledge,
+  searchKnowledge,
+  uploadDocument,
+} from '@/api/knowledge';
+import type { DocumentChunk, KnowledgeDocument, KnowledgeSearchResult, KnowledgeSource } from '@/types';
+
+const ACCEPT = '.pdf,.docx,.txt,.md';
+const MAX_MB = 10;
+
+function errMsg(e: unknown): string {
+  if (e instanceof AxiosError) {
+    const d = e.response?.data?.detail;
+    return typeof d === 'string' ? d : e.message;
+  }
+  return 'Something went wrong';
+}
+
+function fileKind(d: KnowledgeDocument): string {
+  const ext = (d.filename ?? '').split('.').pop()?.toLowerCase();
+  if (d.metadata_json && 'source_url' in d.metadata_json) return 'url';
+  return ext && ext.length <= 5 ? ext : 'txt';
+}
+
+function StatusChip({ doc }: { doc: KnowledgeDocument }) {
+  if (doc.status === 'completed')
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+        <CheckCircle2 className="h-3 w-3" /> Ready
+      </span>
+    );
+  if (doc.status === 'failed')
+    return (
+      <span
+        title={doc.error_message ?? ''}
+        className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-medium text-red-700 ring-1 ring-inset ring-red-200"
+      >
+        <AlertTriangle className="h-3 w-3" /> Failed
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+      <Loader2 className="h-3 w-3 animate-spin" /> Embedding
+    </span>
+  );
+}
+
+function Bar({ label, value }: { label: string; value: number | null }) {
+  const v = value == null ? 0 : Math.max(0, Math.min(1, value));
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-16 font-mono text-[10px] uppercase tracking-wider text-slate-400">{label}</span>
+      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-fg/10">
+        <motion.span
+          initial={{ width: 0 }}
+          animate={{ width: `${v * 100}%` }}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
+          className="block h-full rounded-full bg-gradient-to-r from-iris to-aqua"
+        />
+      </span>
+      <span className="w-9 text-right font-mono text-[10px] text-slate-500">{value == null ? '—' : value.toFixed(2)}</span>
+    </div>
+  );
+}
 
 export default function KnowledgePage() {
   const { role } = useAuth();
+  const canManage = role === 'OWNER' || role === 'ADMIN';
+
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'documents' | 'search'>('documents');
+  const [tab, setTab] = useState<'documents' | 'test'>('documents');
 
-  // Search state
+  // upload
+  const [mode, setMode] = useState<'file' | 'text' | 'url'>('file');
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState<string[]>([]);
+  const [notice, setNotice] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [textTitle, setTextTitle] = useState('');
+  const [textBody, setTextBody] = useState('');
+  const [url, setUrl] = useState('');
+  const [busyForm, setBusyForm] = useState(false);
+
+  // chunk viewer
+  const [viewing, setViewing] = useState<KnowledgeDocument | null>(null);
+  const [chunks, setChunks] = useState<DocumentChunk[]>([]);
+  const [chunksLoading, setChunksLoading] = useState(false);
+
+  // retrieval playground
   const [query, setQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
+  const [results, setResults] = useState<KnowledgeSearchResult[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
 
-  // Create document state
-  const [showCreateDoc, setShowCreateDoc] = useState(false);
-  const [docTitle, setDocTitle] = useState('');
-  const [docContent, setDocContent] = useState('');
-  const [docSourceId, setDocSourceId] = useState('');
-  const [creating, setCreating] = useState(false);
-
-  // Embedding state
-  const [embeddingId, setEmbeddingId] = useState<string | null>(null);
-
-  const canManage = role === 'OWNER' || role === 'ADMIN';
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [srcs, docs] = await Promise.all([listKnowledgeSources(), listDocuments()]);
-        setSources(srcs);
-        setDocuments(docs);
-        if (srcs.length > 0 && !docSourceId) setDocSourceId(srcs[0].id);
-      } catch (err) {
-        if (err instanceof AxiosError) setError(err.response?.data?.detail ?? err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+  const refresh = useCallback(async () => {
+    try {
+      const [srcs, docs] = await Promise.all([listKnowledgeSources(), listDocuments()]);
+      setSources(srcs);
+      setDocuments(docs);
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleSearch = async (e: FormEvent) => {
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  // Poll while anything is still embedding so status flips to Ready without a reload.
+  const anyProcessing = useMemo(() => documents.some((d) => d.status === 'processing' || d.status === 'pending'), [documents]);
+  useEffect(() => {
+    if (!anyProcessing) return;
+    const t = setInterval(refresh, 2000);
+    return () => clearInterval(t);
+  }, [anyProcessing, refresh]);
+
+  const totalChunks = documents.reduce((n, d) => n + d.chunk_count, 0);
+
+  // A source is just a container; create one on first use so uploading never requires setup.
+  const ensureSource = async (): Promise<string> => {
+    if (sources.length > 0) return sources[0].id;
+    const s = await createKnowledgeSource({ name: 'Help Center', source_type: 'txt' });
+    setSources([s]);
+    return s.id;
+  };
+
+  const handleFiles = async (files: FileList | File[]) => {
+    if (!canManage) return;
+    setError('');
+    setNotice('');
+    const list = Array.from(files);
+    const bad = list.filter((f) => !ACCEPT.split(',').some((ext) => f.name.toLowerCase().endsWith(ext)));
+    if (bad.length) {
+      setError(`Unsupported file type: ${bad.map((b) => b.name).join(', ')}. Use PDF, DOCX, TXT or MD.`);
+      return;
+    }
+    const big = list.filter((f) => f.size > MAX_MB * 1024 * 1024);
+    if (big.length) {
+      setError(`${big.map((b) => b.name).join(', ')} exceeds the ${MAX_MB} MB limit.`);
+      return;
+    }
+    try {
+      const sourceId = await ensureSource();
+      for (const f of list) {
+        setUploading((u) => [...u, f.name]);
+        try {
+          await uploadDocument(f, sourceId);
+        } catch (e) {
+          setError(`${f.name}: ${errMsg(e)}`);
+        } finally {
+          setUploading((u) => u.filter((n) => n !== f.name));
+        }
+      }
+      await refresh();
+      setNotice('Uploaded. Documents are being chunked and embedded; they become searchable when marked Ready.');
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  };
+
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files);
+  };
+
+  const submitText = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusyForm(true);
+    setError('');
+    try {
+      await createDocument({ knowledge_source_id: await ensureSource(), title: textTitle, content: textBody });
+      setTextTitle('');
+      setTextBody('');
+      await refresh();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setBusyForm(false);
+    }
+  };
+
+  const submitUrl = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusyForm(true);
+    setError('');
+    try {
+      await ingestUrl(await ensureSource(), url);
+      setUrl('');
+      await refresh();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setBusyForm(false);
+    }
+  };
+
+  const openChunks = async (doc: KnowledgeDocument) => {
+    setViewing(doc);
+    setChunks([]);
+    setChunksLoading(true);
+    try {
+      setChunks(await listDocumentChunks(doc.id));
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setChunksLoading(false);
+    }
+  };
+
+  const remove = async (doc: KnowledgeDocument) => {
+    if (!confirm(`Delete “${doc.title}”? The AI will stop using it immediately.`)) return;
+    try {
+      await deleteDocument(doc.id);
+      setDocuments((d) => d.filter((x) => x.id !== doc.id));
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  };
+
+  const retry = async (doc: KnowledgeDocument) => {
+    try {
+      await embedDocument(doc.id);
+    } catch (e) {
+      setError(errMsg(e));
+    }
+    refresh();
+  };
+
+  const reindexAll = async () => {
+    if (!confirm('Re-chunk and re-embed every document? Use this after changing the embedding model.')) return;
+    try {
+      const r = await reindexKnowledge();
+      setNotice(`Re-indexing ${r.documents} document(s)…`);
+      refresh();
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  };
+
+  const runSearch = async (e: FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
     setSearching(true);
     setSearchError('');
-    setSearchResults([]);
     try {
-      const resp = await searchKnowledge({ query, top_k: 5 });
-      setSearchResults(resp.results);
+      setResults((await searchKnowledge({ query, top_k: 5 })).results);
     } catch (err) {
-      if (err instanceof AxiosError) setSearchError(err.response?.data?.detail ?? err.message);
+      setSearchError(errMsg(err));
     } finally {
       setSearching(false);
     }
   };
 
-  const handleCreateDoc = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!docSourceId) return;
-    setCreating(true);
-    try {
-      const doc = await createDocument({
-        knowledge_source_id: docSourceId,
-        title: docTitle,
-        content: docContent,
-      });
-      setDocuments((prev) => [doc, ...prev]);
-      setDocTitle('');
-      setDocContent('');
-      setShowCreateDoc(false);
-    } catch (err) {
-      if (err instanceof AxiosError) setError(err.response?.data?.detail ?? err.message);
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleEmbed = async (docId: string) => {
-    setEmbeddingId(docId);
-    try {
-      const updated = await embedDocument(docId);
-      setDocuments((prev) => prev.map((d) => (d.id === docId ? updated : d)));
-    } catch (err) {
-      if (err instanceof AxiosError) setError(err.response?.data?.detail ?? err.message);
-    } finally {
-      setEmbeddingId(null);
-    }
-  };
-
-  const sourceMap = new Map(sources.map((s) => [s.id, s]));
-
   return (
     <ProtectedRoute>
       <AppLayout title="Knowledge Base">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Knowledge Base</h2>
-            <p className="text-sm text-slate-500">{sources.length} sources · {documents.length} documents</p>
+        <div className="mb-6 mt-2 flex flex-wrap items-end justify-between gap-4">
+          <p className="max-w-xl text-slate-500">
+            Upload your documents. The assistant answers <em className="text-slate-700">only</em> from what is here, with citations, and hands off to a
+            person when the documents don&apos;t cover a question.
+          </p>
+          <div className="flex gap-6">
+            <div>
+              <p className="font-display text-5xl leading-none text-slate-950"><CountUp value={documents.length} duration={0.8} /></p>
+              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">documents</p>
+            </div>
+            <div>
+              <p className="font-display text-5xl leading-none text-slate-950"><CountUp value={totalChunks} duration={0.8} /></p>
+              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">passages</p>
+            </div>
           </div>
-          {canManage && (
-            <Button onClick={() => setShowCreateDoc(true)}>+ Add Document</Button>
-          )}
         </div>
 
         {error && <div className="mb-4"><ErrorBanner message={error} /></div>}
+        {notice && (
+          <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div>
+        )}
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-white border border-slate-200 rounded-lg p-1 w-fit mb-5">
-          {(['documents', 'search'] as const).map((tab) => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              className={`px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === tab ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-800'}`}>
-              {tab === 'documents' ? 'Documents' : '🔍 Knowledge Search'}
+        <div className="glass mb-5 inline-flex rounded-full p-1">
+          {(['documents', 'test'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`relative rounded-full px-5 py-2 text-[13px] font-medium transition-colors ${tab === t ? 'text-bg' : 'text-slate-500 hover:text-slate-900'}`}
+            >
+              {tab === t && <motion.span layoutId="kb-tab" className="absolute inset-0 rounded-full bg-fg" transition={{ type: 'spring', stiffness: 420, damping: 34 }} />}
+              <span className="relative">{t === 'documents' ? 'Documents' : 'Test retrieval'}</span>
             </button>
           ))}
         </div>
 
-        {activeTab === 'documents' && (
+        {tab === 'documents' && (
           <>
-            {/* Create Document Modal */}
-            {showCreateDoc && (
-              <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-                <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
-                  <h2 className="text-base font-semibold text-slate-800 mb-4">Add Document</h2>
-                  <form onSubmit={handleCreateDoc} className="space-y-3">
-                    <select value={docSourceId} onChange={e => setDocSourceId(e.target.value)} required
-                      className="w-full border border-slate-200 rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                      <option value="">Select a knowledge source</option>
-                      {sources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                    <input required placeholder="Title" value={docTitle} onChange={e => setDocTitle(e.target.value)}
-                      className="w-full border border-slate-200 rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-                    <textarea required placeholder="Document content…" rows={6} value={docContent} onChange={e => setDocContent(e.target.value)}
-                      className="w-full border border-slate-200 rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none" />
-                    <div className="flex justify-end gap-2">
-                      <Button variant="secondary" size="sm" type="button" onClick={() => setShowCreateDoc(false)}>Cancel</Button>
-                      <Button size="sm" type="submit" loading={creating}>Add Document</Button>
-                    </div>
-                  </form>
+            {canManage && (
+              <Card className="mb-6 p-5">
+                <div className="mb-4 flex gap-1.5">
+                  {([['file', UploadCloud, 'Upload files'], ['text', FileText, 'Paste text'], ['url', Globe, 'Web page']] as const).map(([m, Icon, label]) => (
+                    <button
+                      key={m}
+                      onClick={() => setMode(m)}
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                        mode === m ? 'bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200' : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      <Icon className="h-3.5 w-3.5" /> {label}
+                    </button>
+                  ))}
                 </div>
-              </div>
-            )}
 
-            {/* Sources summary */}
-            {!loading && sources.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-4">
-                {sources.map((src) => (
-                  <div key={src.id} className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-full px-3 py-1 text-xs text-slate-600">
-                    <span className="font-medium">{src.name}</span>
-                    <Badge color={src.status === 'active' ? 'green' : 'slate'}>{src.status}</Badge>
-                    <span className="text-slate-400">{src.source_type}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Documents table */}
-            <Card>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50">
-                      <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Title</th>
-                      <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Source</th>
-                      <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
-                      <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Chunks</th>
-                      <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Created</th>
-                      {canManage && <th className="px-5 py-3" />}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {loading ? (
-                      [1, 2, 3].map((i) => (
-                        <tr key={i}><td colSpan={6}>
-                          <div className="animate-pulse flex gap-4 px-4 py-3">
-                            {[1,2,3,4,5].map(j => <div key={j} className="h-4 bg-slate-200 rounded flex-1" />)}
-                          </div>
-                        </td></tr>
-                      ))
-                    ) : documents.length === 0 ? (
-                      <tr><td colSpan={6}>
-                        <EmptyState
-                          title="No documents yet"
-                          description="Add a document to your knowledge base to get started."
-                          action={canManage ? <Button onClick={() => setShowCreateDoc(true)}>+ Add Document</Button> : undefined}
-                        />
-                      </td></tr>
-                    ) : (
-                      documents.map((doc) => (
-                        <tr key={doc.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-5 py-3.5 font-medium text-slate-800 max-w-xs truncate">{doc.title}</td>
-                          <td className="px-5 py-3.5 text-slate-500 text-xs">{sourceMap.get(doc.knowledge_source_id)?.name ?? '—'}</td>
-                          <td className="px-5 py-3.5"><DocumentStatusBadge status={doc.status} /></td>
-                          <td className="px-5 py-3.5 text-slate-600">{doc.chunk_count}</td>
-                          <td className="px-5 py-3.5 text-slate-400 text-xs">{new Date(doc.created_at).toLocaleDateString()}</td>
-                          {canManage && (
-                            <td className="px-5 py-3.5">
-                              {doc.status !== 'embedded' && (
-                                <Button
-                                  variant="ghost" size="sm"
-                                  loading={embeddingId === doc.id}
-                                  onClick={() => handleEmbed(doc.id)}
-                                >
-                                  Embed
-                                </Button>
-                              )}
-                              {doc.status === 'embedded' && (
-                                <Badge color="green">Embedded</Badge>
-                              )}
-                            </td>
-                          )}
-                        </tr>
-                      ))
+                {mode === 'file' && (
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                    onDragLeave={() => setDragging(false)}
+                    onDrop={onDrop}
+                    onClick={() => fileRef.current?.click()}
+                    className={`group cursor-pointer rounded-3xl border-2 border-dashed px-6 py-12 text-center transition-all ${
+                      dragging ? 'scale-[1.01] border-iris bg-iris/10' : 'border-line-strong hover:border-iris/60 hover:bg-fg/[0.03]'
+                    }`}
+                  >
+                    <input ref={fileRef} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => e.target.files && handleFiles(e.target.files)} />
+                    <motion.div animate={dragging ? { y: -6 } : { y: 0 }} className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-iris/15 text-iris">
+                      <UploadCloud className="h-6 w-6" />
+                    </motion.div>
+                    <p className="font-display text-2xl text-slate-950">Drop documents here</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      or <span className="text-indigo-600">browse</span>. PDF, DOCX, TXT, MD up to {MAX_MB} MB each
+                    </p>
+                    {uploading.length > 0 && (
+                      <div className="mt-4 flex flex-wrap justify-center gap-2">
+                        {uploading.map((n) => (
+                          <span key={n} className="inline-flex items-center gap-1.5 rounded-full bg-fg/5 px-3 py-1 text-xs text-slate-600">
+                            <Loader2 className="h-3 w-3 animate-spin" /> {n}
+                          </span>
+                        ))}
+                      </div>
                     )}
-                  </tbody>
-                </table>
+                  </div>
+                )}
+
+                {mode === 'text' && (
+                  <form onSubmit={submitText} className="space-y-3">
+                    <input required value={textTitle} onChange={(e) => setTextTitle(e.target.value)} placeholder="Title, e.g. Returns policy" className="w-full rounded-2xl border border-line bg-fg/[0.04] px-4 py-2.5 text-sm outline-none focus:border-iris focus:ring-4 focus:ring-iris/20" />
+                    <textarea required rows={6} value={textBody} onChange={(e) => setTextBody(e.target.value)} placeholder="Paste the document text…" className="w-full rounded-2xl border border-line bg-fg/[0.04] px-4 py-2.5 text-sm outline-none focus:border-iris focus:ring-4 focus:ring-iris/20" />
+                    <Button type="submit" loading={busyForm}>Add document</Button>
+                  </form>
+                )}
+
+                {mode === 'url' && (
+                  <form onSubmit={submitUrl} className="flex gap-2">
+                    <div className="flex flex-1 items-center gap-2 rounded-full border border-line bg-fg/[0.04] px-4">
+                      <Link2 className="h-4 w-4 text-slate-400" />
+                      <input required type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/help/returns" className="w-full bg-transparent py-2.5 text-sm outline-none" />
+                    </div>
+                    <Button type="submit" loading={busyForm}>Import page</Button>
+                  </form>
+                )}
+              </Card>
+            )}
+
+            {loading ? (
+              <div className="grid gap-4 md:grid-cols-2"><SkeletonCard /><SkeletonCard /></div>
+            ) : documents.length === 0 ? (
+              <Card>
+                <EmptyState
+                  icon={<Layers className="h-5 w-5" />}
+                  title="No documents yet"
+                  description="Upload a PDF, Word file or text and the assistant can start answering from it."
+                />
+              </Card>
+            ) : (
+              <div className="grid gap-3">
+                <AnimatePresence initial={false}>
+                  {documents.map((d) => (
+                    <motion.div
+                      key={d.id}
+                      layout
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.97 }}
+                      className="glass group flex flex-wrap items-center gap-4 rounded-3xl p-4 pr-5 transition-colors hover:border-line-strong"
+                    >
+                      <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-2xl bg-fg/[0.06] font-mono text-[11px] font-semibold uppercase text-iris">
+                        {fileKind(d)}
+                      </span>
+                      <button onClick={() => openChunks(d)} className="min-w-0 flex-1 text-left">
+                        <p className="truncate text-[15px] font-medium text-slate-950 group-hover:text-indigo-600">{d.title}</p>
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          {d.chunk_count} passage{d.chunk_count === 1 ? '' : 's'} · added {new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </p>
+                        {d.status === 'failed' && d.error_message && (
+                          <p className="mt-1 line-clamp-2 text-xs text-red-600">{d.error_message}</p>
+                        )}
+                      </button>
+                      <StatusChip doc={d} />
+                      {canManage && (
+                        <div className="flex items-center gap-1">
+                          {d.status === 'failed' && (
+                            <button onClick={() => retry(d)} title="Retry embedding" className="grid h-9 w-9 place-items-center rounded-full text-slate-500 transition-colors hover:bg-fg/10 hover:text-slate-950">
+                              <RefreshCw className="h-4 w-4" />
+                            </button>
+                          )}
+                          <button onClick={() => remove(d)} title="Delete" className="grid h-9 w-9 place-items-center rounded-full text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+                {canManage && (
+                  <button onClick={reindexAll} className="mx-auto mt-2 inline-flex items-center gap-1.5 text-xs text-slate-400 transition-colors hover:text-slate-700">
+                    <RefreshCw className="h-3.5 w-3.5" /> Re-index all documents
+                  </button>
+                )}
               </div>
-            </Card>
+            )}
           </>
         )}
 
-        {activeTab === 'search' && (
-          <Card className="p-6">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4">Semantic Knowledge Search</h3>
-            <form onSubmit={handleSearch} className="flex gap-2 mb-6">
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="e.g. return policy for damaged products…"
-                className="flex-1 border border-slate-200 rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              />
+        {tab === 'test' && (
+          <div>
+            <p className="mb-4 max-w-xl text-sm text-slate-500">
+              Ask a question to see exactly which passages the assistant would be given. Passages that aren&apos;t relevant enough are never shown to it.
+            </p>
+            <form onSubmit={runSearch} className="glass mb-6 flex items-center gap-2 rounded-full py-1.5 pl-5 pr-1.5">
+              <Search className="h-4 w-4 text-slate-400" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. how long do I have to return something?" className="flex-1 bg-transparent py-2 text-sm outline-none" />
               <Button type="submit" loading={searching}>Search</Button>
             </form>
+            {searchError && <div className="mb-4"><ErrorBanner message={searchError} /></div>}
 
-            {searchError && <ErrorBanner message={searchError} />}
-
-            {searchResults.length === 0 && !searching && query && (
-              <EmptyState title="No results found" description="Try a different query." />
+            {results && results.length === 0 && (
+              <Card>
+                <EmptyState
+                  icon={<AlertTriangle className="h-5 w-5" />}
+                  title="Nothing relevant found"
+                  description="The assistant would not answer this from the documents. It would say so and offer a human instead of guessing."
+                />
+              </Card>
             )}
-
-            {searchResults.length > 0 && (
-              <div className="space-y-4">
-                <p className="text-xs text-slate-500">{searchResults.length} results for "<strong>{query}</strong>"</p>
-                {searchResults.map((result, idx) => (
-                  <div key={result.chunk_id} className="border border-slate-200 rounded-lg p-4 bg-slate-50/50">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-slate-600">Result #{idx + 1} · Chunk {result.chunk_index}</span>
-                      <div className="flex items-center gap-2">
-                        <Badge color={result.similarity_score > 0.7 ? 'green' : result.similarity_score > 0.4 ? 'yellow' : 'slate'}>
-                          {(result.similarity_score * 100).toFixed(1)}% match
-                        </Badge>
-                      </div>
-                    </div>
-                    <p className="text-sm text-slate-700 leading-relaxed">{result.content}</p>
+            <div className="grid gap-3">
+              {results?.map((r, i) => (
+                <motion.div key={r.chunk_id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }} className="glass rounded-3xl p-5">
+                  <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="grid h-6 w-6 place-items-center rounded-full bg-iris/15 font-mono text-[11px] font-bold text-iris">{i + 1}</span>
+                    <span className="font-medium text-slate-900">{r.document_title}</span>
+                    {r.section && <span className="rounded-full bg-fg/5 px-2 py-0.5 text-slate-500">{r.section}</span>}
+                    {r.page && <span className="rounded-full bg-fg/5 px-2 py-0.5 text-slate-500">page {r.page}</span>}
+                    <span className="ml-auto font-mono text-[11px] text-aqua">relevance {r.similarity_score.toFixed(2)}</span>
                   </div>
-                ))}
-              </div>
-            )}
-
-            {searchResults.length === 0 && !query && (
-              <div className="text-center py-10">
-                <p className="text-slate-400 text-sm">Enter a query to search your knowledge base semantically.</p>
-                <p className="text-slate-300 text-xs mt-1">Results are powered by vector embeddings.</p>
-              </div>
-            )}
-          </Card>
+                  <p className="text-sm leading-relaxed text-slate-700">{r.content}</p>
+                  <div className="mt-3 grid gap-1.5 sm:grid-cols-3">
+                    <Bar label="meaning" value={r.dense_score} />
+                    <Bar label="keywords" value={r.keyword_score} />
+                    <Bar label="coverage" value={r.coverage} />
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
         )}
+
+        {/* Chunk viewer drawer */}
+        <AnimatePresence>
+          {viewing && (
+            <motion.div key="drawer" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setViewing(null)} className="fixed inset-0 z-50 flex justify-end bg-black/55 backdrop-blur-sm">
+              <motion.aside
+                initial={{ x: 480 }}
+                animate={{ x: 0 }}
+                exit={{ x: 480 }}
+                transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+                onClick={(e) => e.stopPropagation()}
+                className="flex h-full w-full max-w-lg flex-col border-l border-line bg-surface"
+              >
+                <div className="flex items-start justify-between gap-3 border-b border-line p-6">
+                  <div className="min-w-0">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">Passages the AI can use</p>
+                    <h3 className="mt-1 truncate font-display text-3xl text-slate-950">{viewing.title}</h3>
+                  </div>
+                  <button onClick={() => setViewing(null)} className="grid h-9 w-9 place-items-center rounded-full text-slate-400 hover:bg-fg/10 hover:text-slate-950">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex-1 space-y-3 overflow-y-auto p-6">
+                  {chunksLoading && <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>}
+                  {chunks.map((c) => {
+                    const meta = (c.metadata_json ?? {}) as { section?: string; page?: number };
+                    return (
+                      <div key={c.id} className="rounded-2xl border border-line bg-fg/[0.03] p-4">
+                        <div className="mb-2 flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-slate-400">
+                          <span>#{c.chunk_index + 1}</span>
+                          {meta.section && <span className="rounded-full bg-fg/5 px-2 py-0.5 normal-case tracking-normal text-slate-500">{meta.section}</span>}
+                          {meta.page && <span>p.{meta.page}</span>}
+                          <span className={`ml-auto ${c.has_embedding ? 'text-aqua' : 'text-amber-600'}`}>{c.has_embedding ? `vector · ${c.embedding_model ?? ''}` : 'no vector'}</span>
+                        </div>
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{c.content}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.aside>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </AppLayout>
     </ProtectedRoute>
   );

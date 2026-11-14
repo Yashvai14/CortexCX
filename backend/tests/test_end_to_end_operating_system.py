@@ -62,7 +62,7 @@ def test_complete_cortex_cx_operating_system():
             document_id=doc.id,
             chunk_index=0,
             content="Standard domestic shipping arrives in 3 to 5 business days with FedEx tracking.",
-            embedding=[0.1] * 128,
+            embedding=[0.1] * settings.EMBEDDING_DIMENSION,
         )
         db.add(chunk)
 

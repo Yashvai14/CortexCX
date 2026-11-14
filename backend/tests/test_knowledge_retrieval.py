@@ -1,4 +1,5 @@
 import uuid
+from app.core.config import settings
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -22,7 +23,7 @@ def test_embedding_provider_logic():
     v1 = provider.embed_text("How to configure CortexCX workspace?")
     v2 = provider.embed_text("How to configure CortexCX workspace?")
     assert v1 == v2
-    assert len(v1) == 128
+    assert len(v1) == settings.EMBEDDING_DIMENSION
 
     # 3. Different text produces different vector
     v3 = provider.embed_text("How to process a refund for a customer?")
@@ -210,7 +211,7 @@ def test_milestone_12_embedding_and_vector_retrieval():
         assert len(chunks_doc1) > 0
         for chunk in chunks_doc1:
             assert chunk.embedding is not None
-            assert len(chunk.embedding) == 128
+            assert len(chunk.embedding) == settings.EMBEDDING_DIMENSION
 
         # Embed Document 2 by Admin
         embed_doc2 = client.post(

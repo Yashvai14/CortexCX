@@ -4,7 +4,7 @@ from app.knowledge.model import DocumentChunk
 class ContextCompressor:
     """Compresses, deduplicates, and condenses retrieved knowledge chunks to optimize prompt space."""
 
-    def __init__(self, max_total_chars: int = 3000):
+    def __init__(self, max_total_chars: int = 9000):
         self.max_total_chars = max_total_chars
 
     def compress(

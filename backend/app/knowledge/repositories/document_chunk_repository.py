@@ -1,7 +1,6 @@
-import math
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.common.repository import BaseRepository
 from app.knowledge.model import Document, DocumentChunk
@@ -45,43 +44,22 @@ class DocumentChunkRepository(BaseRepository[DocumentChunk]):
         top_k: int = 5,
         knowledge_source_id: UUID | None = None,
     ) -> list[tuple[DocumentChunk, float]]:
-        """Search workspace chunks by cosine similarity against query vector."""
-        query = db.query(DocumentChunk).filter(
-            DocumentChunk.workspace_id == workspace_id,
-            DocumentChunk.embedding.isnot(None),
-        )
+        """Nearest chunks by cosine distance, computed inside Postgres by pgvector (HNSW index).
 
-        if knowledge_source_id is not None:
-            query = query.join(
-                Document, DocumentChunk.document_id == Document.id
-            ).filter(Document.knowledge_source_id == knowledge_source_id)
-
-        chunks = query.all()
-        if not chunks:
-            return []
-
-        # Compute cosine similarity for each chunk
-        query_mag = math.sqrt(sum(q * q for q in query_vector))
-        if query_mag == 0:
-            query_mag = 1.0
-
-        scored_chunks: list[tuple[DocumentChunk, float]] = []
-
-        for chunk in chunks:
-            if not chunk.embedding:
-                continue
-
-            dot_product = sum(
-                q * c for q, c in zip(query_vector, chunk.embedding)
+        Returns (chunk, cosine_similarity) pairs, most similar first. Tenant-scoped.
+        """
+        distance = DocumentChunk.embedding.cosine_distance(query_vector)
+        query = (
+            db.query(DocumentChunk, distance.label("distance"))
+            .options(joinedload(DocumentChunk.document))
+            .filter(
+                DocumentChunk.workspace_id == workspace_id,
+                DocumentChunk.embedding.isnot(None),
             )
-            chunk_mag = math.sqrt(sum(c * c for c in chunk.embedding))
-            if chunk_mag == 0:
-                chunk_mag = 1.0
-
-            similarity = dot_product / (query_mag * chunk_mag)
-            scored_chunks.append((chunk, round(similarity, 6)))
-
-        # Order by similarity score descending
-        scored_chunks.sort(key=lambda item: item[1], reverse=True)
-
-        return scored_chunks[:top_k]
+        )
+        if knowledge_source_id is not None:
+            query = query.join(Document, DocumentChunk.document_id == Document.id).filter(
+                Document.knowledge_source_id == knowledge_source_id
+            )
+        rows = query.order_by(distance).limit(top_k).all()
+        return [(chunk, round(1.0 - float(dist), 6)) for chunk, dist in rows]

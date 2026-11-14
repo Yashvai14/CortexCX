@@ -20,6 +20,7 @@ import { getCustomer } from '@/api/customers';
 import type { Conversation, Message, Customer, RAGSourceCitation } from '@/types';
 import { AxiosError } from 'axios';
 import { useAuth } from '@/context/AuthContext';
+import { LinkedTickets } from '@/components/tickets/LinkedTickets';
 
 type SenderType = 'customer' | 'agent' | 'ai' | 'system';
 
@@ -198,6 +199,17 @@ export default function ConversationDetailPage() {
                   </Link>
                 )}
               </div>
+              {canEdit && (
+                <div className="mt-3">
+                  <LinkedTickets
+                    compact
+                    conversationId={conversation.id}
+                    customerId={customer?.id}
+                    defaultSubject={conversation.subject}
+                    defaultDescription={`Raised from conversation "${conversation.subject}".`}
+                  />
+                </div>
+              )}
             </div>
 
             {canEdit && (

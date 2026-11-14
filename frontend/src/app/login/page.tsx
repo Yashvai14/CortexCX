@@ -1,9 +1,15 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'motion/react';
+import { ArrowRight, ArrowLeft, Mail, Lock } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { AxiosError } from 'axios';
+import { Logo } from '@/components/layout/Logo';
+import { Spinner } from '@/components/ui';
+import { CursorGlow, gsap, useGSAP } from '@/components/motion';
 
 function getErrorMessage(err: unknown): string {
   if (err instanceof AxiosError) {
@@ -15,6 +21,9 @@ function getErrorMessage(err: unknown): string {
   return 'An unexpected error occurred.';
 }
 
+const inputCls =
+  'peer w-full rounded-2xl border border-line bg-fg/[0.04] py-3.5 pl-11 pr-4 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-iris focus:bg-fg/[0.07] focus:ring-4 focus:ring-iris/20';
+
 export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
@@ -22,6 +31,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useGSAP(() => {
+    gsap.to('[data-o="1"]', { x: 50, y: 60, duration: 8, repeat: -1, yoyo: true, ease: 'sine.inOut' });
+    gsap.to('[data-o="2"]', { x: -40, y: -50, duration: 10, repeat: -1, yoyo: true, ease: 'sine.inOut' });
+    gsap.from('[data-line]', { yPercent: 110, duration: 1.1, ease: 'expo.out', stagger: 0.12, delay: 0.2 });
+    gsap.from('[data-stat]', { opacity: 0, y: 20, duration: 0.9, ease: 'expo.out', stagger: 0.1, delay: 0.9 });
+  });
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -38,39 +54,88 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        {/* Logo */}
-        <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="h-9 w-9 rounded-lg bg-indigo-500 flex items-center justify-center text-white font-bold text-base">
-            C
-          </div>
-          <div>
-            <p className="text-white font-semibold text-lg leading-tight">CortexCX</p>
-            <p className="text-slate-400 text-xs leading-tight">
-              AI Customer Experience OS
-            </p>
+    <div data-theme="dark" className="relative grid min-h-screen bg-bg text-slate-900 lg:grid-cols-[1.1fr_1fr]">
+      <div className="aurora" aria-hidden><i /></div>
+      {/* Brand panel */}
+      <div className="relative z-10 hidden overflow-hidden p-12 text-white lg:flex lg:flex-col lg:justify-between">
+        <div className="absolute inset-0 bg-grid [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]" />
+        <div data-o="1" className="absolute -left-20 top-20 h-96 w-96 rounded-full bg-indigo-600/50 blur-[110px]" />
+        <div data-o="2" className="absolute -right-10 bottom-10 h-96 w-96 rounded-full bg-mint/25 blur-[110px]" />
+        <CursorGlow />
+
+        <Link href="/" className="relative flex items-center gap-3">
+          <Logo size={40} dark />
+          <span className="font-display text-xl font-semibold">
+            Cortex<span className="text-mint">CX</span>
+          </span>
+        </Link>
+
+        <div className="relative">
+          <h1 className="font-display text-[5.4rem] leading-[0.92] tracking-[-0.03em]">
+            {['Every customer.', 'Remembered.', 'Resolved.'].map((l, i) => (
+              <span key={l} className="block overflow-hidden pb-2">
+                <span data-line className={`block ${i === 1 ? 'italic text-gradient' : ''}`}>
+                  {l}
+                </span>
+              </span>
+            ))}
+          </h1>
+          <div className="mt-12 grid max-w-md grid-cols-3 gap-4">
+            {[
+              ['15', 'intents'],
+              ['6', 'tools'],
+              ['24/7', 'coverage'],
+            ].map(([v, l]) => (
+              <div key={l} data-stat className="rounded-2xl glass-dark p-4">
+                <p className="font-display text-3xl font-semibold">{v}</p>
+                <p className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-slate-400">{l}</p>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl">
-          <h2 className="text-white text-xl font-semibold mb-1">Sign in</h2>
-          <p className="text-slate-400 text-sm mb-6">
-            Enter your credentials to access your workspace
-          </p>
+        <p className="relative font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">
+          AI Customer Experience OS
+        </p>
+      </div>
 
-          {error && (
-            <div className="mb-5 rounded-lg bg-red-900/30 border border-red-800 px-4 py-3 text-sm text-red-300">
-              {error}
-            </div>
-          )}
+      {/* Form panel */}
+      <div className="relative z-10 flex items-center justify-center border-l border-line bg-surface/50 px-6 py-12 backdrop-blur-2xl">
+        <Link
+          href="/"
+          className="absolute left-6 top-6 flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back
+        </Link>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Email
-              </label>
+        <motion.div
+          initial={{ opacity: 0, y: 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 120, damping: 20, delay: 0.15 }}
+          className="w-full max-w-[400px]"
+        >
+          <div className="mb-8 lg:hidden">
+            <Logo size={44} />
+          </div>
+          <h2 className="font-display text-5xl text-slate-950">Welcome <span className="italic text-gradient-ink">back</span></h2>
+          <p className="mt-2 text-slate-500">Sign in to your workspace to continue.</p>
+
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, height: 0, x: 0 }}
+                animate={{ opacity: 1, height: 'auto', x: [0, -8, 8, -5, 5, 0] }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-6 overflow-hidden rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+              >
+                {error}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+            <div className="relative">
+              <Mail className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition-colors peer-focus:text-iris" />
               <input
                 id="login-email"
                 type="email"
@@ -79,14 +144,11 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@company.com"
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className={inputCls}
               />
             </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Password
-              </label>
+            <div className="relative">
+              <Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition-colors peer-focus:text-iris" />
               <input
                 id="login-password"
                 type="password"
@@ -94,31 +156,25 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                placeholder="Password"
+                className={inputCls}
               />
             </div>
 
-            <button
+            <motion.button
               id="login-submit"
               type="submit"
               disabled={loading}
-              className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium text-sm rounded-lg py-2.5 transition-colors flex items-center justify-center gap-2"
+              whileHover={{ scale: 1.015 }}
+              whileTap={{ scale: 0.97 }}
+              className="group mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-snow py-4 text-sm font-semibold text-ink transition-shadow hover:shadow-glow disabled:opacity-60"
             >
-              {loading && (
-                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-              )}
+              {loading ? <Spinner size="sm" tone="current" /> : null}
               {loading ? 'Signing in…' : 'Sign in'}
-            </button>
+              {!loading && <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />}
+            </motion.button>
           </form>
-        </div>
-
-        <p className="text-center text-xs text-slate-600 mt-6">
-          CortexCX — Powered by real PostgreSQL data
-        </p>
+        </motion.div>
       </div>
     </div>
   );

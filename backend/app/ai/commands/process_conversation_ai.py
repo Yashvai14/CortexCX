@@ -16,6 +16,10 @@ from app.conversation.repositories.message_repository import MessageRepository
 from app.conversation.schema import MessageResponse
 
 
+def _sender_value(m) -> str:
+    return m.sender_type.value if hasattr(m.sender_type, "value") else str(m.sender_type)
+
+
 class ProcessConversationAICommand:
 
     @staticmethod
@@ -55,6 +59,41 @@ class ProcessConversationAICommand:
             db=db,
             conversation_id=conversation.id,
         )
+
+        # 4b. If there is a customer message to answer, run the FULL cognitive pipeline
+        # (memory -> intent -> plan -> tools -> hybrid RAG -> confidence -> answer/escalate),
+        # exactly like the Telegram / web-chat channels, instead of a bare LLM call.
+        last_customer = next(
+            (m for m in reversed(messages) if _sender_value(m) == "customer"),
+            None,
+        )
+        if last_customer is not None:
+            from app.ai.orchestrator import ConversationOrchestrator
+
+            result = ConversationOrchestrator.process_turn(
+                db=db,
+                workspace_id=current_user.workspace_id,
+                conversation=conversation,
+                customer_message_content=last_customer.content,
+                prompt_override=data.prompt_override if data else None,
+            )
+            db.refresh(conversation)
+            ai_message = next(
+                (m for m in reversed(message_repo.list_by_conversation(db=db, conversation_id=conversation.id))
+                 if _sender_value(m) == "ai"),
+                None,
+            )
+            if ai_message is None:
+                # Orchestrator short-circuited (human takeover already active): nothing new was generated.
+                raise ValueError(
+                    "A human agent already owns this conversation; AI replies are paused until it is returned to AI"
+                )
+            return AIProcessConversationResponse(
+                conversation_id=conversation.id,
+                message=MessageResponse.model_validate(ai_message),
+                ai_state=conversation.ai_state,
+                provider=f"cortex-pipeline ({result.decision.lower()}, confidence {result.confidence_score:.2f})",
+            )
         history = [
             {
                 "sender_type": (

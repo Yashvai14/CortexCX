@@ -13,6 +13,10 @@ from app.database.session import get_db
 from app.escalation.model import EscalationStatus, HumanEscalation
 from app.learning.model import AgentFeedback
 from app.memory.service import CustomerMemoryService
+from app.channels.telegram_adapter import TelegramAdapter, CONFIRM_BUTTONS, first_name
+from app.customer.model import Customer
+from app.ticket import automation as ticket_auto
+from app.ticket.model import TicketStatus
 
 router = APIRouter(
     prefix="/escalations",
@@ -154,7 +158,18 @@ def claim_escalation(
         conv.ai_enabled = False
         conv.ai_state = "escalated"
 
+    ticket_auto.sync(
+        db, esc.conversation_id, TicketStatus.IN_PROGRESS,
+        f"{current_user.full_name} claimed this escalation", assignee_id=current_user.id,
+    )
     db.commit()
+    if conv:
+        cust = db.get(Customer, conv.customer_id)
+        cf = first_name(cust.full_name) if cust else ""
+        agent = first_name(current_user.full_name) or "A teammate"
+        TelegramAdapter.notify_customer(
+            db, conv, f"{'Hi ' + cf + '! ' if cf else 'Hi! '}👩‍💼 {agent} from our support team has joined and will help you personally."
+        )
     return {"message": "Escalation claimed successfully", "status": esc.status.value}
 
 
@@ -185,17 +200,46 @@ def respond_to_escalation(
     )
     db.add(msg)
 
+    awaiting = False
+    conv_push = db.query(Conversation).filter(Conversation.id == esc.conversation_id).first()
+    cust = db.get(Customer, conv_push.customer_id) if conv_push else None
+    prompt = ticket_auto.confirm_prompt(first_name(cust.full_name) if cust else "")
     if data.resolve:
-        esc.status = EscalationStatus.RESOLVED
-        esc.resolved_at = datetime.utcnow()
+        # Don't close on the agent's word alone: ask the customer to confirm first.
+        awaiting = True
+        db.add(Message(
+            conversation_id=esc.conversation_id,
+            sender_type=MessageSenderType.SYSTEM,
+            content=prompt,
+        ))
         conv = db.query(Conversation).filter(Conversation.id == esc.conversation_id).first()
         if conv:
-            conv.ai_enabled = True
-            conv.ai_state = "idle"
+            conv.ai_state = ticket_auto.AWAITING_CONFIRMATION
+        ticket_auto.sync(
+            db, esc.conversation_id, TicketStatus.WAITING,
+            f"{current_user.full_name} marked it resolved - waiting for the customer to confirm",
+            agent_replied=True,
+        )
+    else:
+        ticket_auto.sync(
+            db, esc.conversation_id, TicketStatus.WAITING,
+            f"{current_user.full_name} replied - waiting on the customer", agent_replied=True,
+        )
 
     db.commit()
     db.refresh(msg)
-    return {"message": "Agent reply sent successfully", "message_id": str(msg.id)}
+
+    # Deliver to Telegram customers (web chat picks the messages up by polling)
+    if conv_push is not None:
+        agent = first_name(current_user.full_name) or "Support"
+        TelegramAdapter.notify_customer(db, conv_push, f"👩‍💼 {agent} from support:\n{data.content.strip()}")
+        if awaiting:
+            TelegramAdapter.notify_customer(db, conv_push, prompt, buttons=CONFIRM_BUTTONS)
+    return {
+        "message": "Agent reply sent successfully",
+        "message_id": str(msg.id),
+        "awaiting_customer_confirmation": awaiting,
+    }
 
 
 
@@ -224,6 +268,10 @@ def return_conversation_to_ai(
 
     esc.status = EscalationStatus.RETURNED_TO_AI
     esc.resolved_at = datetime.utcnow()
+    ticket_auto.sync(
+        db, esc.conversation_id, TicketStatus.RESOLVED,
+        f"{current_user.full_name} returned the conversation to the AI",
+    )
     db.commit()
     return {"message": "Conversation returned to AI engine successfully"}
 

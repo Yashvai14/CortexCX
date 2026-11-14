@@ -1,3 +1,4 @@
+import html
 import ipaddress
 import re
 import socket
@@ -60,8 +61,8 @@ class URLParser(BaseDocumentParser):
         # Strip remaining tags
         text = re.sub(r"<[^>]+>", " ", cleaned)
 
-        # Normalize HTML entities
-        text = text.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
+        # Normalize HTML entities (&nbsp; &amp; &#8217; ...)
+        text = html.unescape(text)
 
         # Normalize whitespace
         lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]

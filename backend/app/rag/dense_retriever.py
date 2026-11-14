@@ -28,7 +28,7 @@ class DenseRetriever(BaseRetriever):
 
         provider = get_embedding_provider()
         try:
-            query_vector = provider.embed_text(query.strip())
+            query_vector = provider.embed_query(query.strip())
         except Exception as e:
             raise RuntimeError(f"Failed to generate query embedding: {str(e)}") from None
 

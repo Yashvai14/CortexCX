@@ -38,4 +38,10 @@ class ListDocumentChunksCommand:
             workspace_id=current_user.workspace_id,
         )
 
-        return [DocumentChunkResponse.model_validate(c) for c in chunks]
+        results = []
+        for c in chunks:
+            item = DocumentChunkResponse.model_validate(c)
+            item.has_embedding = c.embedding is not None
+            item.embedding_model = c.embedding_model
+            results.append(item)
+        return results

@@ -43,7 +43,7 @@ function CreateCustomerModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+      <div className="bg-surface rounded-xl shadow-xl w-full max-w-md p-6">
         <h2 className="text-base font-semibold text-slate-800 mb-4">New Customer</h2>
         {err && <div className="mb-3"><ErrorBanner message={err} /></div>}
         <form onSubmit={handleSubmit} className="space-y-3">

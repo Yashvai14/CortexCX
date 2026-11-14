@@ -13,3 +13,4 @@ from app.escalation.model import HumanEscalation
 from app.learning.model import AgentFeedback
 from app.ai.trace_model import AIRunTrace
 from app.channels.model import ChannelIdentity
+from app.ticket.model import Ticket, TicketComment

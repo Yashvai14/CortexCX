@@ -1,3 +1,4 @@
+from app.core.config import settings
 import uuid
 import app.database.models
 from sqlalchemy.orm import Session
@@ -81,21 +82,21 @@ def test_hybrid_rag_dense_and_bm25_retrieval():
             document_id=doc.id,
             chunk_index=0,
             content="Standard delivery takes 3 to 5 business days via FedEx or UPS Ground.",
-            embedding=[0.1] * 128,
+            embedding=[0.1] * settings.EMBEDDING_DIMENSION,
         )
         chunk2 = DocumentChunk(
             workspace_id=ws_id,
             document_id=doc.id,
             chunk_index=1,
             content="Returns must be postmarked within 30 days of purchase for a full refund.",
-            embedding=[0.2] * 128,
+            embedding=[0.2] * settings.EMBEDDING_DIMENSION,
         )
         chunk3 = DocumentChunk(
             workspace_id=ws_id,
             document_id=doc.id,
             chunk_index=2,
             content="All customer accounts get free gift wrapping on anniversary orders.",
-            embedding=[0.3] * 128,
+            embedding=[0.3] * settings.EMBEDDING_DIMENSION,
         )
         db.add_all([chunk1, chunk2, chunk3])
         db.commit()

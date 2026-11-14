@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.auth.model import User, UserRole
-from app.knowledge.chunking import chunk_text
+from app.knowledge.ingestion.pipeline import build_chunks
 from app.knowledge.model import Document, DocumentChunk, DocumentStatus
 from app.knowledge.repositories.document_chunk_repository import (
     DocumentChunkRepository,
@@ -46,16 +46,6 @@ class CreateDocumentCommand:
 
         cleaned_content = data.content.strip()
 
-        # 4. Generate deterministic chunks
-        raw_chunks = chunk_text(
-            text=cleaned_content,
-            chunk_size=500,
-            chunk_overlap=50,
-        )
-
-        if not raw_chunks:
-            raise ValueError("Document content produced zero chunks")
-
         # 5. Create and persist Document record
         doc = Document(
             workspace_id=current_user.workspace_id,
@@ -64,25 +54,19 @@ class CreateDocumentCommand:
             filename=data.filename.strip() if data.filename else None,
             content=cleaned_content,
             metadata_json=data.metadata_json,
-            status=DocumentStatus.COMPLETED,
+            status=DocumentStatus.PROCESSING,  # chunked; becomes COMPLETED once embeddings are stored
         )
 
         doc_repo.add(db, doc)
         db.flush()
 
-        # 6. Create DocumentChunk records
-        chunk_models = [
-            DocumentChunk(
-                workspace_id=current_user.workspace_id,
-                document_id=doc.id,
-                chunk_index=idx,
-                content=chunk_str,
-                metadata_json={"chunk_size": len(chunk_str)},
-            )
-            for idx, chunk_str in enumerate(raw_chunks)
-        ]
-
-        chunk_repo.create_chunks_bulk(db, chunk_models)
+        # 4-6. Normalize the text, split it on its own structure and persist the chunk rows
+        # (embedding happens afterwards, in the background, so the upload returns quickly)
+        try:
+            chunk_models = build_chunks(db, doc)
+        except ValueError:
+            db.rollback()
+            raise
 
         db.commit()
         db.refresh(doc)

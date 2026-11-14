@@ -8,7 +8,9 @@ from app.embeddings.base import BaseEmbeddingProvider
 class MockEmbeddingProvider(BaseEmbeddingProvider):
     """Deterministic mock embedding provider for testing and development."""
 
-    def __init__(self, dimension: int = 128):
+    model_name = "mock-hash-embedding"
+
+    def __init__(self, dimension: int = 768):
         self.dimension = dimension
 
     def embed_text(self, text: str) -> list[float]:

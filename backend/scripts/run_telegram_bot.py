@@ -39,12 +39,23 @@ from app.channels.telegram_adapter import TelegramAdapter
 
 
 def get_default_workspace_id() -> UUID:
+    """Workspace the bot serves: TELEGRAM_WORKSPACE_ID from .env (if present in DB), else the first active workspace."""
     db = SessionLocal()
     try:
-        ws = db.query(Workspace).filter(Workspace.is_active.is_(True)).first()
-        if not ws:
+        if settings.TELEGRAM_WORKSPACE_ID:
+            try:
+                target_id = UUID(settings.TELEGRAM_WORKSPACE_ID)
+                ws = db.query(Workspace).filter(Workspace.id == target_id).first()
+                if ws:
+                    return ws.id
+                print(f"WARNING: TELEGRAM_WORKSPACE_ID={settings.TELEGRAM_WORKSPACE_ID} not found in DB; falling back to active workspace.")
+            except ValueError:
+                print(f"WARNING: Invalid TELEGRAM_WORKSPACE_ID={settings.TELEGRAM_WORKSPACE_ID}; falling back to active workspace.")
+
+        workspaces = db.query(Workspace).filter(Workspace.is_active.is_(True)).order_by(Workspace.created_at).all()
+        if not workspaces:
             raise RuntimeError("No active Workspace found in database. Please run migrations or create a workspace first.")
-        return ws.id
+        return workspaces[0].id
     finally:
         db.close()
 
@@ -112,6 +123,11 @@ def run_polling(workspace_id: UUID) -> None:
         try:
             url = f"https://api.telegram.org/bot{token}/getUpdates?offset={offset}&timeout=20"
             resp = httpx.get(url, timeout=30.0)
+            if resp.status_code == 401:
+                print("Telegram rejected the bot token (401 Unauthorized). It was revoked or changed in BotFather.")
+                print("Copy the current token from @BotFather (/mybots -> your bot -> API Token), put it in")
+                print("backend/.env as TELEGRAM_BOT_TOKEN, then start this script again.")
+                sys.exit(1)
             if resp.status_code != 200:
                 print(f"Telegram API warning (HTTP {resp.status_code}): {resp.text}")
                 time.sleep(2)

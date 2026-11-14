@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -23,6 +23,8 @@ from app.knowledge.commands.list_knowledge_sources import (
     ListKnowledgeSourcesCommand,
 )
 from app.knowledge.commands.search_knowledge import SearchKnowledgeCommand
+from app.knowledge.ingestion.pipeline import reindex_document, run_embedding_job
+from app.knowledge.model import Document, DocumentStatus
 from app.knowledge.parsers.factory import get_parser_for_type
 from app.knowledge.parsers.url_parser import URLParser, validate_safe_url
 from app.knowledge.schema import (
@@ -128,6 +130,7 @@ def get_knowledge_source(
     status_code=status.HTTP_201_CREATED,
 )
 def create_document(
+    background_tasks: BackgroundTasks,
     data: DocumentCreateRequest,
     current_user: User = Depends(
         require_roles(UserRole.OWNER, UserRole.ADMIN)
@@ -135,11 +138,13 @@ def create_document(
     db: Session = Depends(get_db),
 ):
     try:
-        return CreateDocumentCommand.execute(
+        created = CreateDocumentCommand.execute(
             db=db,
             current_user=current_user,
             data=data,
         )
+        background_tasks.add_task(run_embedding_job, created.id)
+        return created
     except LookupError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -163,6 +168,7 @@ def create_document(
     status_code=status.HTTP_201_CREATED,
 )
 async def upload_document(
+    background_tasks: BackgroundTasks,
     knowledge_source_id: UUID = Form(...),
     file: UploadFile = File(...),
     title: str | None = Form(None),
@@ -215,13 +221,8 @@ async def upload_document(
                 metadata_json={"file_size": len(content_bytes), "file_extension": ext},
             ),
         )
-        # Attempt auto-embed so the document is immediately queryable
-        try:
-            EmbedDocumentCommand.execute(db=db, current_user=current_user, document_id=created_doc.id)
-        except Exception:
-            # Fallback: document is created and chunked even if vector embedding provider is temporarily offline
-            pass
-
+        # Chunks are saved; embedding + vector storage continue in the background (status: processing -> completed)
+        background_tasks.add_task(run_embedding_job, created_doc.id)
         return created_doc
     except LookupError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
@@ -235,6 +236,7 @@ async def upload_document(
     status_code=status.HTTP_201_CREATED,
 )
 def ingest_url(
+    background_tasks: BackgroundTasks,
     data: URLIngestRequest,
     current_user: User = Depends(
         require_roles(UserRole.OWNER, UserRole.ADMIN)
@@ -266,11 +268,7 @@ def ingest_url(
                 metadata_json={"source_url": url},
             ),
         )
-        try:
-            EmbedDocumentCommand.execute(db=db, current_user=current_user, document_id=created_doc.id)
-        except Exception:
-            pass
-
+        background_tasks.add_task(run_embedding_job, created_doc.id)
         return created_doc
     except LookupError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
@@ -410,3 +408,63 @@ def search_knowledge(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(e),
         )
+
+
+# =====================================================================
+# Maintenance: delete + re-index
+# =====================================================================
+
+
+@router.delete(
+    "/documents/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_document(
+    document_id: UUID,
+    current_user: User = Depends(require_roles(UserRole.OWNER, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+):
+    """Delete a document with all of its chunks and vectors (the AI stops citing it immediately)."""
+    doc = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.workspace_id == current_user.workspace_id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    db.delete(doc)
+    db.commit()
+
+
+def _reindex_workspace_job(workspace_id: UUID) -> None:
+    from app.database.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        for doc in db.query(Document).filter(Document.workspace_id == workspace_id).all():
+            try:
+                reindex_document(db, doc)
+            except Exception as e:
+                db.rollback()
+                doc = db.get(Document, doc.id)
+                if doc is not None:
+                    doc.status = DocumentStatus.FAILED
+                    doc.error_message = f"{type(e).__name__}: {e}"[:1000]
+                    db.commit()
+    finally:
+        db.close()
+
+
+@router.post(
+    "/reindex",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def reindex_knowledge(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_roles(UserRole.OWNER, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+):
+    """Re-normalize, re-chunk and re-embed every document (use after changing the embedding model)."""
+    count = db.query(Document).filter(Document.workspace_id == current_user.workspace_id).count()
+    background_tasks.add_task(_reindex_workspace_job, current_user.workspace_id)
+    return {"message": "Re-indexing started", "documents": count}

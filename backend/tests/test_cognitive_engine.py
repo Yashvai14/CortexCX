@@ -114,6 +114,17 @@ def test_commerce_tools_and_planner():
             workspace_id=ws_id,
             arguments={"order_number": "ORD-7744"},
         )
+        # Without a verified identity the tool must disclose nothing.
+        assert order_res.data["found"] is False
+        assert order_res.data["verification_required"] is True
+        assert "FedEx" not in str(order_res.data)
+
+        order_res = tool_registry.execute_tool(
+            "order_tracking",
+            db=db,
+            workspace_id=ws_id,
+            arguments={"order_number": "ORD-7744", "_emails": [cust.email]},
+        )
         assert order_res.success is True
         assert order_res.data["found"] is True
         assert order_res.data["order"]["carrier"] == "FedEx"
@@ -144,7 +155,9 @@ def test_commerce_tools_and_planner():
         assert len(plan.steps) >= 1
         assert plan.steps[0].tool_name == "order_tracking"
 
-        executed = AIPlanner.execute_plan(db=db, workspace_id=ws_id, plan=plan)
+        executed = AIPlanner.execute_plan(
+            db=db, workspace_id=ws_id, plan=plan, context={"_customer_id": cust.id, "_emails": []}
+        )
         assert executed.has_errors is False
         assert len(executed.tool_results) >= 1
         assert "FedEx" in executed.summary_context

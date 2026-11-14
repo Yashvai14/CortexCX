@@ -6,6 +6,7 @@ from app.commerce.model import Product, Inventory
 from app.commerce.order_model import Order, OrderItem, OrderStatus
 from app.commerce.coupon_model import Coupon
 from app.commerce.policy_model import Policy
+from app.ai.text_utils import keywords, stem
 
 
 class ProductService:
@@ -23,13 +24,23 @@ class ProductService:
         )
         if category:
             q = q.filter(Product.category.ilike(f"%{category.strip()}%"))
-        if query:
-            pattern = f"%{query.strip()}%"
-            q = q.filter(
-                (Product.name.ilike(pattern)) | (Product.description.ilike(pattern)) | (Product.sku.ilike(pattern))
-            )
-
-        products = q.limit(limit).all()
+        products = q.all()
+        if query and query.strip():
+            # Match on informative keywords (not the whole sentence) and rank by how many hit.
+            terms = [stem(t) for t in keywords(query, 6)]
+            if terms:
+                scored = []
+                for p in products:
+                    hay = " ".join(filter(None, [p.name, p.description, p.sku, p.category])).lower()
+                    name = p.name.lower()
+                    hits = sum(1 for t in terms if t in hay)
+                    if hits:
+                        scored.append((hits + 0.5 * sum(1 for t in terms if t in name), p))
+                scored.sort(key=lambda x: x[0], reverse=True)
+                products = [p for _, p in scored]
+            else:
+                products = []
+        products = products[:limit]
         results = []
         for p in products:
             inv = db.query(Inventory).filter(Inventory.product_id == p.id).first()
@@ -62,7 +73,13 @@ class ProductService:
             .first()
         )
         if not p:
-            return None
+            # The input is usually a whole sentence; fall back to the best keyword match.
+            found = ProductService.search_products(db=db, workspace_id=workspace_id, query=sku_or_name, limit=1)
+            if not found:
+                return None
+            p = db.query(Product).filter(Product.id == found[0]["id"]).first()
+            if not p:
+                return None
 
         inv = db.query(Inventory).filter(Inventory.product_id == p.id).first()
         qty = inv.quantity_available if inv else 0
@@ -84,14 +101,12 @@ class OrderService:
         order_number: str,
     ) -> dict | None:
         clean_num = order_number.strip().replace("#", "")
-        order = (
-            db.query(Order)
-            .filter(
-                Order.workspace_id == workspace_id,
-                (Order.order_number.ilike(clean_num)) | (Order.order_number.ilike(f"%{clean_num}%")),
-            )
-            .first()
-        )
+        base = db.query(Order).filter(Order.workspace_id == workspace_id)
+        # Exact match first; only fall back to a suffix match for a reasonably specific reference
+        # (e.g. "1001" -> "ORD-1001"), never a loose substring of a short token.
+        order = base.filter(Order.order_number.ilike(clean_num)).first()
+        if not order and len(clean_num) >= 4 and any(c.isdigit() for c in clean_num):
+            order = base.filter(Order.order_number.ilike(f"%{clean_num}")).first()
         if not order:
             return None
 
@@ -116,6 +131,37 @@ class OrderService:
             "created_at": order.created_at.isoformat() if order.created_at else None,
             "items": items,
         }
+
+    @staticmethod
+    def track_order_for_customer(
+        db: Session,
+        workspace_id: UUID,
+        order_number: str,
+        customer_id: UUID | None = None,
+        verified_emails: list[str] | None = None,
+    ) -> dict | None:
+        """Order details for an AI/customer-facing channel, only if the requester owns the order.
+
+        Ownership = the order belongs to the conversation's customer, OR the requester supplied the
+        email address on the order. Returns None for "not found" and "not yours" alike so the
+        response never reveals whether someone else's order number exists.
+        """
+        info = OrderService.track_order(db=db, workspace_id=workspace_id, order_number=order_number)
+        if not info:
+            return None
+        order = (
+            db.query(Order)
+            .filter(Order.workspace_id == workspace_id, Order.order_number == info["order_number"])
+            .first()
+        )
+        if not order:
+            return None
+        if customer_id and order.customer_id == customer_id:
+            return info
+        owner_email = (order.customer.email or "").strip().lower() if order.customer else ""
+        if owner_email and owner_email in {e.strip().lower() for e in (verified_emails or [])}:
+            return info
+        return None
 
     @staticmethod
     def list_customer_orders(

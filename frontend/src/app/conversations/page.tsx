@@ -66,7 +66,7 @@ export default function ConversationsPage() {
         {error && <div className="mb-4"><ErrorBanner message={error} /></div>}
 
         {/* Filter tabs */}
-        <div className="flex items-center gap-1 mb-4 bg-white border border-slate-200 rounded-lg p-1 w-fit">
+        <div className="flex items-center gap-1 mb-4 bg-surface border border-slate-200 rounded-lg p-1 w-fit">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.value}

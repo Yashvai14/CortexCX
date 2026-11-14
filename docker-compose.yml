@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: cortexcx-postgres
     restart: unless-stopped
     environment:
@@ -12,7 +12,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5434}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_pgvector_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d cortexcx_db"]
       interval: 5s
@@ -27,6 +27,15 @@ services:
       - "${OLLAMA_PORT:-11435}:11434"
     volumes:
       - ollama_data:/root/.ollama
+    # Use the NVIDIA GPU when the host has one (CPU inference is ~10x slower). Requires the NVIDIA driver and
+    # Docker Desktop's WSL2 GPU support; remove this block to run on CPU only.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   backend:
     build:
@@ -71,6 +80,6 @@ services:
       - "${FRONTEND_PORT:-3001}:3000"
 
 volumes:
-  postgres_data:
+  postgres_pgvector_data:
   ollama_data:
 

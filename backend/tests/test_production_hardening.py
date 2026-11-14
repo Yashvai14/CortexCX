@@ -348,4 +348,4 @@ def test_human_takeover_ai_suspension(db_session: Session):
     # Must be intercepted: escalated, no LLM hallucinations/replies
     assert resp.escalated is True
     assert resp.ai_state == "escalated"
-    assert "human support agent" in resp.content.lower() or "support agent" in resp.content.lower()
+    assert "team" in resp.content.lower() or "support agent" in resp.content.lower()

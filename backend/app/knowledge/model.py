@@ -13,7 +13,10 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.config import settings
 
 from app.database.base import BaseModel
 
@@ -130,6 +133,12 @@ class Document(BaseModel):
         nullable=False,
     )
 
+    # Populated when ingestion (parse / chunk / embed) fails, so the UI can say why
+    error_message: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     knowledge_source = relationship(
         "KnowledgeSource",
         back_populates="documents",
@@ -176,8 +185,15 @@ class DocumentChunk(BaseModel):
         nullable=False,
     )
 
+    # pgvector column (cosine distance, HNSW index created in the migration)
     embedding: Mapped[list[float] | None] = mapped_column(
-        ARRAY(Float),
+        Vector(settings.EMBEDDING_DIMENSION),
+        nullable=True,
+    )
+
+    # Which model produced `embedding`, so stale vectors can be detected after a model change
+    embedding_model: Mapped[str | None] = mapped_column(
+        String(100),
         nullable=True,
     )
 

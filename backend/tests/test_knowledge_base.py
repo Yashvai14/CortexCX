@@ -223,7 +223,7 @@ def test_milestone_11_knowledge_base_endpoints():
         # =============================================================
         # 7. OWNER can create document (with chunking)
         # =============================================================
-        long_content = "CortexCX provides automated customer support. " * 30  # ~1380 chars
+        long_content = "CortexCX provides automated customer support. " * 120  # ~5500 chars: larger than one chunk (2800 max)
         res_doc_owner = client.post(
             "/knowledge/documents",
             headers={"Authorization": f"Bearer {owner_a_token}"},

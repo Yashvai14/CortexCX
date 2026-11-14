@@ -15,6 +15,7 @@ from app.customer.router import router as customer_router
 from app.database.database import engine
 from app.escalation.router import router as escalation_router
 from app.knowledge.router import router as knowledge_router
+from app.ticket.router import router as ticket_router
 from app.workspace.router import router as workspace_router
 
 app = FastAPI(
@@ -30,6 +31,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
@@ -49,6 +52,15 @@ app.include_router(channels_router)
 app.include_router(escalation_router)
 app.include_router(commerce_router)
 app.include_router(analytics_router)
+app.include_router(ticket_router)
+
+@app.on_event("startup")
+def _warm_llm():
+    if (settings.AI_PROVIDER or "").lower().strip() == "ollama":
+        from app.ai.providers.ollama_provider import warm_up_ollama
+
+        warm_up_ollama()
+
 
 @app.get("/")
 def root():
@@ -128,4 +140,4 @@ def database_health():
             connection.execute(text("SELECT 1"))
         return {"database": "connected"}
     except Exception as e:
-        return {"database": "failed", "error": str(e)}
+        return {"database": "failed", "error": str(e)}

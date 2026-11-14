@@ -25,10 +25,9 @@ class ExecutedPlan:
     def summary_context(self) -> str:
         if not self.tool_results:
             return ""
-        sections = []
-        for r in self.tool_results:
-            sections.append(f"--- Tool Execution: {r.tool_name} (Success: {r.success}) ---\n{r.to_readable_text()}")
-        return "\n\n".join(sections)
+        from app.ai.facts import render_facts
+
+        return render_facts(self.tool_results)
 
 
 class AIPlanner:
@@ -66,6 +65,12 @@ class AIPlanner:
         steps: list[PlanStep] = []
         requires_rag = False
 
+        # Documents are always consulted for informational questions; only live-data lookups with everything
+        # they need (an order number, a coupon code) and plain greetings skip retrieval.
+        requires_rag = not intent.entities.get("smalltalk") and intent.intent not in (
+            IntentEnum.ORDER_STATUS, IntentEnum.ORDER_CANCELLATION, IntentEnum.HUMAN_AGENT,
+        )
+
         # 2. Map intents to appropriate tools
         if intent.intent == IntentEnum.ORDER_STATUS:
             order_num = intent.entities.get("order_number")
@@ -78,8 +83,8 @@ class AIPlanner:
                     )
                 )
             else:
-                # If no order number found, RAG might provide general shipping policy
-                requires_rag = True
+                # No order number yet: the right move is to ask for it, not to search the knowledge base.
+                requires_rag = False
 
         elif intent.intent == IntentEnum.ORDER_CANCELLATION:
             order_num = intent.entities.get("order_number")
@@ -142,15 +147,18 @@ class AIPlanner:
                 elif intent.intent == IntentEnum.DELIVERY:
                     pol_type = "shipping"
                 else:
-                    pol_type = "return"
+                    # A generic "what is your policy on X?" names no known policy type. Do NOT default to the return
+                    # policy: that would present an unrelated policy as the answer. The document search decides.
+                    pol_type = None
 
-            steps.append(
-                PlanStep(
-                    tool_name="policy_lookup",
-                    arguments={"policy_type": pol_type},
-                    description=f"Retrieve official store policy for {pol_type}",
+            if pol_type:
+                steps.append(
+                    PlanStep(
+                        tool_name="policy_lookup",
+                        arguments={"policy_type": pol_type},
+                        description=f"Retrieve official store policy for {pol_type}",
+                    )
                 )
-            )
             # Complement policy lookup with knowledge search for nuanced FAQs
             requires_rag = True
 
@@ -158,8 +166,8 @@ class AIPlanner:
             requires_rag = True
 
         else:
-            # For OTHER or unclassified, try knowledge search
-            requires_rag = True
+            # For OTHER or unclassified, try knowledge search (not for plain greetings / thanks)
+            requires_rag = not intent.entities.get("smalltalk")
 
         return PlanResult(
             goal=f"Resolve customer inquiry: {intent.intent.value}",
@@ -174,14 +182,17 @@ class AIPlanner:
         db: Session,
         workspace_id: UUID,
         plan: PlanResult,
+        context: dict[str, Any] | None = None,
     ) -> ExecutedPlan:
+        """Run the planned tools. `context` carries trusted identity (`_customer_id`, `_emails`)
+        that tools use for authorization; it overrides anything in a step's own arguments."""
         tool_results: list[ToolResult] = []
         for step in plan.steps:
             res = tool_registry.execute_tool(
                 tool_name=step.tool_name,
                 db=db,
                 workspace_id=workspace_id,
-                arguments=step.arguments,
+                arguments={**step.arguments, **(context or {})},
             )
             tool_results.append(res)
 

@@ -31,6 +31,8 @@ class ConversationResponse(BaseModel):
     customer_id: UUID
     subject: str
     status: ConversationStatus
+    ai_enabled: bool = True
+    ai_state: str = "idle"
     created_at: datetime
     updated_at: datetime
 

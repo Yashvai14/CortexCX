@@ -1,0 +1,395 @@
+{
+  "document": "Thread_and_Trend_Refund_Return_Policy.pdf",
+  "note": "Expected sections are labelled by reading the PDF. 'relevant' lists section numbers of the document that answer the question; a retrieval counts as a hit if ANY of them is retrieved. 'facts' are substrings a correct answer must contain; 'forbidden' must not appear.",
+  "questions": [
+    {
+      "id": 1,
+      "q": "What is your return policy?",
+      "broad": true,
+      "relevant": [
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4"
+      ],
+      "facts": [
+        "7 calendar days"
+      ],
+      "forbidden": []
+    },
+    {
+      "id": 2,
+      "q": "How many days do I have to return a shirt?",
+      "relevant": [
+        "2.1",
+        "Q1"
+      ],
+      "facts": [
+        "7 calendar days"
+      ],
+      "forbidden": []
+    },
+    {
+      "id": 3,
+      "q": "Can I return a washed shirt?",
+      "relevant": [
+        "2.1",
+        "2.3",
+        "8.6",
+        "8.5",
+        "Scenario 12",
+        "Q4"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 4,
+      "q": "How long does a UPI refund take?",
+      "relevant": [
+        "4.3",
+        "Q9"
+      ],
+      "facts": [
+        "3",
+        "7 business days"
+      ],
+      "forbidden": [
+        "10 business days"
+      ]
+    },
+    {
+      "id": 5,
+      "q": "Can I get a refund for a defective shirt?",
+      "relevant": [
+        "6.2",
+        "6.1",
+        "4.1",
+        "Q5",
+        "Scenario 3",
+        "Scenario 13"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 6,
+      "q": "What happens if I receive the wrong colour?",
+      "relevant": [
+        "6.3",
+        "Q6",
+        "Scenario 5"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 7,
+      "q": "Can I cancel an order after dispatch?",
+      "relevant": [
+        "5.3",
+        "Q11",
+        "Scenario 7"
+      ],
+      "facts": [
+        "cannot normally be cancelled"
+      ],
+      "forbidden": []
+    },
+    {
+      "id": 8,
+      "q": "Can I return a discounted product?",
+      "relevant": [
+        "7.2",
+        "Q7",
+        "Q14"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 9,
+      "q": "What happens if the requested exchange size is unavailable?",
+      "relevant": [
+        "3.4",
+        "Scenario 11",
+        "Q3"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 10,
+      "q": "How are COD refunds processed?",
+      "relevant": [
+        "4.7",
+        "Q10"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 11,
+      "q": "What if I receive only two items instead of three?",
+      "relevant": [
+        "6.5",
+        "6.4",
+        "Scenario 9",
+        "Q15"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 12,
+      "q": "Is an unboxing video compulsory?",
+      "relevant": [
+        "6.6",
+        "10.1",
+        "Q18"
+      ],
+      "facts": [
+        "not an absolute requirement"
+      ],
+      "forbidden": []
+    },
+    {
+      "id": 13,
+      "q": "What if I report a manufacturing defect after 10 days?",
+      "relevant": [
+        "6.2",
+        "6.1",
+        "Scenario 13",
+        "Q5"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 14,
+      "q": "Can I return one item from a BOGO order?",
+      "relevant": [
+        "7.4",
+        "Scenario 14",
+        "Q15"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 15,
+      "q": "What happens if my payment succeeds but the order fails?",
+      "relevant": [
+        "5.7",
+        "4.1",
+        "Scenario 10"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 16,
+      "q": "Are customized clothes returnable?",
+      "relevant": [
+        "7.1"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 17,
+      "q": "Who pays return shipping for defective products?",
+      "relevant": [
+        "4.5",
+        "1.3",
+        "6.2",
+        "6.1",
+        "8.1",
+        "3.6"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 18,
+      "q": "Can I get a refund through a different payment method?",
+      "relevant": [
+        "4.6",
+        "Q20"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 19,
+      "q": "Does return pickup confirmation mean the refund is approved?",
+      "relevant": [
+        "11.1",
+        "8.1",
+        "2.5"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 20,
+      "q": "Can I return a product after 12 days because I changed my mind?",
+      "relevant": [
+        "2.1",
+        "2.2",
+        "Q1",
+        "Scenario 2"
+      ],
+      "facts": [
+        "7 calendar days"
+      ],
+      "forbidden": []
+    },
+    {
+      "id": 21,
+      "q": "What are the refund policies?",
+      "broad": true,
+      "relevant": [
+        "4.1",
+        "4.2",
+        "4.3",
+        "4.6"
+      ],
+      "facts": [
+        "5 business days"
+      ],
+      "forbidden": []
+    },
+    {
+      "id": 22,
+      "q": "How long until my money comes back?",
+      "relevant": [
+        "4.3",
+        "Q9"
+      ],
+      "facts": [
+        "5 business days"
+      ],
+      "forbidden": []
+    },
+    {
+      "id": 23,
+      "q": "What happens if my shirt is torn?",
+      "relevant": [
+        "6.1",
+        "6.2",
+        "Q5",
+        "Scenario 3"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 24,
+      "q": "I paid using UPI, but my order failed and money got deducted.",
+      "relevant": [
+        "5.7",
+        "4.1",
+        "Scenario 10"
+      ],
+      "facts": [],
+      "forbidden": []
+    },
+    {
+      "id": 25,
+      "q": "Can I get my refund in cryptocurrency?",
+      "relevant": [],
+      "unanswerable": true,
+      "facts": [],
+      "forbidden": [
+        "bitcoin",
+        "crypto wallet"
+      ]
+    }
+  ],
+  "conversations": [
+    {
+      "id": "A",
+      "turns": [
+        {
+          "q": "What is your refund policy?",
+          "relevant": [
+            "4.1",
+            "4.2",
+            "4.3",
+            "4.6"
+          ]
+        },
+        {
+          "q": "How long does it take?",
+          "relevant": [
+            "4.3",
+            "Q9"
+          ]
+        },
+        {
+          "q": "What if I paid through UPI?",
+          "relevant": [
+            "4.3",
+            "Q9"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "turns": [
+        {
+          "q": "Can I return a shirt?",
+          "relevant": [
+            "2.1",
+            "2.2"
+          ]
+        },
+        {
+          "q": "What if I wore it once?",
+          "relevant": [
+            "2.1",
+            "Q4"
+          ]
+        },
+        {
+          "q": "What if it was already damaged when delivered?",
+          "relevant": [
+            "6.1",
+            "6.2",
+            "Q5",
+            "Scenario 3"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "turns": [
+        {
+          "q": "Can I cancel my order?",
+          "relevant": [
+            "5.1",
+            "5.2",
+            "5.3"
+          ]
+        },
+        {
+          "q": "What if it has already been dispatched?",
+          "relevant": [
+            "5.3",
+            "Q11",
+            "Scenario 7"
+          ]
+        },
+        {
+          "q": "What if I refuse delivery?",
+          "relevant": [
+            "5.3"
+          ]
+        }
+      ]
+    }
+  ]
+}

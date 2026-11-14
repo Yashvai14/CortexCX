@@ -62,16 +62,28 @@ class OrderTrackingTool(BaseTool):
             if not order_number:
                 return ToolResult(tool_name=self.name, success=False, error="order_number argument is required")
 
-            order_info = OrderService.track_order(
+            # Identity context is injected by the planner/orchestrator (never taken from the model).
+            # With no verified identity the tool discloses nothing about any order.
+            customer_id = kwargs.get("_customer_id")
+            emails = kwargs.get("_emails") or []
+            order_info = OrderService.track_order_for_customer(
                 db=db,
                 workspace_id=workspace_id,
                 order_number=str(order_number),
+                customer_id=customer_id,
+                verified_emails=emails,
             )
             if not order_info:
                 return ToolResult(
                     tool_name=self.name,
                     success=True,
-                    data={"found": False, "message": f"No order found matching '{order_number}'."},
+                    data={
+                        "found": False,
+                        # No email on file in the conversation yet: ask for it. Otherwise the details
+                        # didn't match; the same neutral answer covers "no such order" and "not yours".
+                        "verification_required": not emails,
+                        "message": f"No order found matching '{order_number}' for the verified details provided.",
+                    },
                 )
 
             return ToolResult(
@@ -181,16 +193,13 @@ class RefundPolicyTool(BaseTool):
                 policy_type=str(policy_type),
             )
             if not pol:
-                # Default standard D2C policy if not customized
-                default_content = (
-                    "Standard Policy: We offer a 30-day hassle-free return and refund policy on unused items "
-                    "in original packaging. Standard shipping takes 3-5 business days. Order cancellations are "
-                    "accepted within 1 hour of placing the order."
-                )
+                # No official policy record. Never fabricate a "standard" policy: the answer must come from
+                # the uploaded documents (retrieved separately) or not be given at all.
                 return ToolResult(
                     tool_name=self.name,
                     success=True,
-                    data={"policy_type": policy_type, "title": f"Default {policy_type.capitalize()} Policy", "content": default_content},
+                    data={"found": False, "policy_type": policy_type,
+                          "message": f"No official '{policy_type}' policy is on file."},
                 )
             return ToolResult(
                 tool_name=self.name,

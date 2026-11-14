@@ -158,3 +158,13 @@ def process_conversation_rag(
             detail=str(e),
         )
 
+
+
+@router.get("/metrics")
+def pipeline_metrics_snapshot(
+    current_user: User = Depends(require_roles(UserRole.OWNER, UserRole.ADMIN)),
+):
+    """Routing / latency / retrieval / escalation metrics for this server process (resets on restart)."""
+    from app.ai.metrics import pipeline_metrics
+
+    return pipeline_metrics.snapshot()

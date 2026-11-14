@@ -4,6 +4,9 @@ from typing import Any
 from uuid import UUID
 from sqlalchemy.orm import Session
 
+from sqlalchemy.orm import joinedload
+
+from app.ai.text_utils import GENERAL_STOPWORDS, stem
 from app.knowledge.model import Document, DocumentChunk
 from app.rag.retriever_base import BaseRetriever
 
@@ -16,7 +19,13 @@ class BM25Retriever(BaseRetriever):
         self.b = b
 
     def _tokenize(self, text: str) -> list[str]:
-        return re.findall(r"\b[a-z0-9_-]{2,}\b", text.lower())
+        """Lowercase word tokens, stop-words removed and lightly stemmed ('refunds'/'refunded' -> 'refund').
+
+        Stop-words carry no signal for BM25 but add noise (and false lexical matches), so they are dropped
+        from both the query and the indexed text.
+        """
+        tokens = re.findall(r"\b[a-z0-9_-]{2,}\b", text.lower())
+        return [stem(t) for t in tokens if t not in GENERAL_STOPWORDS]
 
     def retrieve(
         self,
@@ -31,7 +40,7 @@ class BM25Retriever(BaseRetriever):
         if not query_terms:
             return []
 
-        q = db.query(DocumentChunk).filter(DocumentChunk.workspace_id == workspace_id)
+        q = db.query(DocumentChunk).options(joinedload(DocumentChunk.document)).filter(DocumentChunk.workspace_id == workspace_id)
         if knowledge_source_id:
             q = q.join(Document, DocumentChunk.document_id == Document.id).filter(
                 Document.knowledge_source_id == knowledge_source_id
@@ -47,7 +56,11 @@ class BM25Retriever(BaseRetriever):
         df: dict[str, int] = {}
 
         for chunk in chunks:
-            tokens = self._tokenize(chunk.content)
+            # Index the passage together with its document title and section heading so a query like
+            # "shipping times" can match a chunk whose body never repeats the word "shipping".
+            section = (chunk.metadata_json or {}).get("section") or ""
+            title = chunk.document.title if chunk.document else ""
+            tokens = self._tokenize(f"{title} {section} {chunk.content}")
             doc_tokens_list.append(tokens)
             doc_lengths.append(len(tokens))
             unique_terms = set(tokens)

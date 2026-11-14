@@ -99,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ...state,
     login,
     logout,
-    role: state.user?.role ?? null,
+    role: (state.user?.role ? (String(state.user.role).toUpperCase() as UserRole) : null),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

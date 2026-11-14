@@ -1,5 +1,7 @@
 from typing import Any
 
+from app.ai.prompts import support_system_prompt
+
 try:
     from openai import OpenAI
 except ImportError:
@@ -41,15 +43,12 @@ class OpenAIProvider(BaseLLMProvider):
         conversation_subject: str,
         messages: list[dict[str, str]],
         prompt_override: str | None = None,
+        store_name: str | None = None,
     ) -> list[dict[str, str]]:
         """Convert database message records into OpenAI chat completion messages."""
-        system_instruction = (
-            f"You are a helpful and professional customer support assistant for CortexCX. "
-            f"You are assisting a customer regarding: '{conversation_subject}'. "
-            f"Provide clear, empathetic, and direct assistance."
-        )
+        system_instruction = support_system_prompt(conversation_subject, store_name)
         if prompt_override:
-            system_instruction += f"\nSpecial Instruction: {prompt_override}"
+            system_instruction += f"\n\n{prompt_override}"
 
         formatted_messages: list[dict[str, str]] = [
             {"role": "system", "content": system_instruction}
@@ -74,6 +73,31 @@ class OpenAIProvider(BaseLLMProvider):
 
         return formatted_messages
 
+    def generate_chat(
+        self,
+        system_instruction: str,
+        messages: list[dict[str, str]],
+        temperature: float = 0.6,
+        max_tokens: int = 160,
+    ) -> str:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "system", "content": system_instruction}, *messages],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            if not response.choices or not response.choices[0].message.content:
+                raise ValueError("empty response")
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            raise RuntimeError(f"OpenAI chat completion failed: {type(e).__name__}") from None
+
+    def generate_raw(self, prompt: str, system_instruction: str | None = None, **kwargs: Any) -> str:
+        """Direct completion (used for the router's JSON classification)."""
+        return self.generate_chat(system_instruction or "", [{"role": "user", "content": prompt}],
+                                  temperature=kwargs.get("temperature", 0.0), max_tokens=kwargs.get("max_tokens", 200))
+
     def generate_response(
         self,
         conversation_subject: str,
@@ -82,11 +106,13 @@ class OpenAIProvider(BaseLLMProvider):
         **kwargs: Any,
     ) -> str:
         """Generate response using OpenAI Chat Completions API."""
+        grounding = kwargs.pop("grounding", None)
         try:
             formatted_messages = self._convert_messages(
                 conversation_subject=conversation_subject,
                 messages=messages,
                 prompt_override=prompt_override,
+                store_name=getattr(grounding, "store_name", None),
             )
 
             response = self.client.chat.completions.create(

@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.auth.model import User, UserRole
-from app.embeddings.factory import get_embedding_provider
+from app.knowledge.ingestion.pipeline import embed_document
 from app.knowledge.model import DocumentStatus
 from app.knowledge.repositories.document_chunk_repository import (
     DocumentChunkRepository,
@@ -40,35 +40,21 @@ class EmbedDocumentCommand:
         if not document:
             raise LookupError("Document not found")
 
-        # 3. Retrieve chunks for the document
-        chunks = chunk_repo.list_by_document_and_workspace(
-            db=db,
-            document_id=document.id,
-            workspace_id=current_user.workspace_id,
-        )
-
-        if not chunks:
-            raise ValueError("Document has no chunks to embed")
-
-        # 4. Generate embeddings using configured provider
-        provider = get_embedding_provider()
-        texts = [chunk.content for chunk in chunks]
-
+        # 3. Embed (batched) and store vectors in pgvector; marks the document COMPLETED
         try:
-            embeddings = provider.embed_texts(texts)
+            count = embed_document(db, document)
+        except ValueError:
+            raise
         except Exception as e:
+            db.rollback()
+            document.status = DocumentStatus.FAILED
+            document.error_message = f"{type(e).__name__}: {e}"[:1000]
+            db.commit()
             raise RuntimeError(
                 f"Embedding provider failed to generate embeddings: {str(e)}"
             ) from None
 
-        # 5. Persist embeddings atomically
-        for chunk, emb in zip(chunks, embeddings):
-            chunk.embedding = emb
-
-        document.status = DocumentStatus.COMPLETED
-        db.commit()
         db.refresh(document)
-
         resp = DocumentResponse.model_validate(document)
-        resp.chunk_count = len(chunks)
+        resp.chunk_count = count
         return resp

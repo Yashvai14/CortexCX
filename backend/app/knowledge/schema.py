@@ -48,6 +48,7 @@ class DocumentResponse(BaseModel):
     content: str
     metadata_json: dict | None = None
     status: DocumentStatus
+    error_message: str | None = None
     chunk_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -62,6 +63,7 @@ class DocumentChunkResponse(BaseModel):
     chunk_index: int
     content: str
     has_embedding: bool = False
+    embedding_model: str | None = None
     metadata_json: dict | None = None
     created_at: datetime
     updated_at: datetime
@@ -83,6 +85,13 @@ class KnowledgeSearchResult(BaseModel):
     chunk_index: int
     similarity_score: float
     metadata_json: dict | None = None
+    document_title: str | None = None
+    section: str | None = None
+    page: int | None = None
+    # Retrieval diagnostics (0..1): embedding cosine, BM25 (normalised), query-word coverage
+    dense_score: float | None = None
+    keyword_score: float | None = None
+    coverage: float | None = None
 
 
 class KnowledgeSearchResponse(BaseModel):
