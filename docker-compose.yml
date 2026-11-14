@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -48,38 +46,63 @@ services:
         condition: service_healthy
       ollama:
         condition: service_started
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    env_file:
+      - ./backend/.env
+    command: >
+      sh -c "alembic upgrade head &&
+             python scripts/bootstrap_docker.py &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
     environment:
-      APP_NAME: CortexCX
-      APP_VERSION: 1.0.0
-      DEBUG: "False"
       HOST: 0.0.0.0
       PORT: 8000
       DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/cortexcx_db
-      SECRET_KEY: cortexcx-super-secure-production-secret-key-32bytes
-      AI_PROVIDER: ollama
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi3:latest}
-      AI_CONFIDENCE_THRESHOLD: 0.75
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
     ports:
-      - "${BACKEND_PORT:-8001}:8000"
+      - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  telegram-bot:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cortexcx-telegram-bot
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    command: >
+      sh -c "if [ -n \"$$TELEGRAM_BOT_TOKEN\" ]; then
+               python scripts/run_telegram_bot.py;
+             else
+               echo 'TELEGRAM_BOT_TOKEN not set; skipping Telegram polling.' && sleep infinity;
+             fi"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/cortexcx_db
+      OLLAMA_BASE_URL: http://ollama:11434
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:${BACKEND_PORT:-8000}
     container_name: cortexcx-frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8001
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${BACKEND_PORT:-8000}
     ports:
-      - "${FRONTEND_PORT:-3001}:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
 
 volumes:
   postgres_pgvector_data:
   ollama_data:
-
